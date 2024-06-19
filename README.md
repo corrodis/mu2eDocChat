@@ -11,5 +11,6 @@ This will generate a "database" with the wikidata and the corresponding embeddin
 Ones that file is present, questions about the mu2e wiki can be asked by
 ```
 import mu2e;
-mu2e.ask("What is mu2e?").content
+answer = mu2e.ask("What is mu2e?")
+print(answer.content[0].text)
 ```
