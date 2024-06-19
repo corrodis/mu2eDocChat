@@ -95,6 +95,6 @@ for chunk in page_data:
     chunk["embedding"] = angle.encode([text])[0].tolist()
 
     
-with open('mu2e_wiki_v2.json', 'w') as file:
+with open('data/mu2e_wiki.json', 'w') as file:
      json.dump(page_data, file, indent=4)
     

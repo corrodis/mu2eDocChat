@@ -4,7 +4,7 @@ from angle_emb import AnglE, Prompts
 angle = AnglE.from_pretrained('WhereIsAI/UAE-Large-V1', pooling_strategy='cls').cuda()
 
 import json
-with open('mu2e_wiki_v2.json', 'r') as file:
+with open('data/mu2e_wiki.json', 'r') as file:
     data = json.load(file)
 emb = np.array([d['embedding'] for d in data])
 
