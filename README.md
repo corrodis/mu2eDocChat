@@ -8,7 +8,7 @@ python getWiki.py
 ```
 This will generate a "database" with the wikidata and the corresponding embeddings in "data/" folder.
 
-Ones that file is present, questions about the mu2e wiki can be asked by
+Ones that file is present, questions about the mu2e wiki can be asked by the code below (see also examples/SimpleAskExample.ipynb) 
 ```
 import mu2e;
 answer = mu2e.ask("What is mu2e?")

@@ -1,10 +1,13 @@
 import numpy as np
+import os
 from scipy import spatial
 from angle_emb import AnglE, Prompts
+import mu2e
+
 angle = AnglE.from_pretrained('WhereIsAI/UAE-Large-V1', pooling_strategy='cls').cuda()
 
 import json
-with open('data/mu2e_wiki.json', 'r') as file:
+with open(mu2e.MU2E+'data/mu2e_wiki.json', 'r') as file:
     data = json.load(file)
 emb = np.array([d['embedding'] for d in data])
 

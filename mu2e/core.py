@@ -1,8 +1,9 @@
 import mu2e
 import json
+import os
 
 ## get the API key(s)
-with open('config.json') as config_file:
+with open(mu2e.MU2E+'config.json') as config_file:
    config = json.load(config_file)
 api_key=config['antropic']
 
