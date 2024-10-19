@@ -30,13 +30,17 @@ def getParagraph(idx, upper=False):
     else:
         text += "<b>"+(data[idx]['text'])+"</b>"
     idx_ = idx + 1
-    while data[idx]['title'] == data[idx_]['title']:
+    while (idx_ in data) and (data[idx]['title'] == data[idx_]['title']):
        text  += data[idx_]['text']
        idx_  += 1
 
     return {"url":url, "heading":heading, "text":text}
 
-def findAndGet(q, number=20, maxdist=0.5):
+def findAndGet(q, number=None, maxdist=None):
+    if number is None:
+        number=20
+    if maxdist is None:
+        maxdist=0.5
     sort, dist = find(q)
     pars = []
     pars_headings = []
