@@ -3,6 +3,8 @@ import re
 from mu2e import tools
 import mu2e
 import anthropic
+from openai import OpenAI
+from abc import ABC, abstractmethod
 
 # input parser
 class InputParser():
@@ -91,22 +93,35 @@ class Retriever():
             #out["prompt"] = out["prompt"] + prompt_string
         return out
 
-class LLM(): #anthropic
-    import mu2e
-    def __init__(self, model="haiku"):
+
+class LLM(ABC): # virtual LLM base class
+    def __init__(self, model):
         self.system_pre = ""
         self.system_post = ""
-        self.client = anthropic.Anthropic(api_key=mu2e.api_keys['antropic'])
-        self.models = {"haiku":"claude-3-haiku-20240307",
-                       "sonnet":"claude-3-5-sonnet-20240620",
-                       "opus":"claude-3-opus-20240229"}
         self.setModel(model)
-        self.max_tokens = 1000
         self.temperature = 0.7
-        self.tools = None
 
-    def setModel(self, model):
+    def setModel(self,model):
         self.model = self.models[model]
+
+    def __call__(self, input):
+        output = input
+        if "messages" not in input:
+            output["messages"] = []
+        output["messages"].append({"role": "user", "content": output["query"]}) # append the latest question
+ 
+        if "llm" not in output:
+            output["llm"] = []
+        output["llm"].append(self.send(output))
+        return(self.process(output))
+    
+    @abstractmethod
+    def process(self, output):
+        pass
+
+    @abstractmethod
+    def send(self, input):
+        pass
 
     def system(self, input):
         system = self.system_pre
@@ -117,22 +132,52 @@ class LLM(): #anthropic
         system += self.system_post
         return system
         
-    def __call__(self, input):
-        output = input
-        if "messages" not in input:
-            output["messages"] = []
-        output["messages"].append({"role": "user", "content": output["query"]}) # append the latest question
 
-        if "llm" not in output:
-            output["llm"] = []
-        output["llm"].append(self.send(output))
+class LLMopenAI(LLM):
+    import mu2e
+    def __init__(self, model="4o-mini"):
+        self.client = OpenAI(api_key=mu2e.api_keys['openAI'])
+        self.models = {"4o-mini":"gpt-4o-mini",
+                       "4o":"chatgpt-4o-latest",
+                       "1o-mini":"o1-mini",
+                       "o1-preview":"o1-preview"}
+        super().__init__(model)
+        
+    def send(self, output):
+        return self.client.chat.completions.create(
+            model=self.model,
+            #system=self.system(output),
+            messages=[{"role":"system", "content":self.system(output)}] 
+                     + output["messages"],
+            stream=False,
+            temperature=self.temperature)
 
-        return(self.process(output))
+    def process(self, output):
+        last_message = output['llm'][ -1].choices
+        if isinstance(last_message, list):
+            last_message = last_message[0]  # Take the first message if it's a list
+        else:
+            last_message = last_message
+
+        output["answer"] = last_message.message.content
+        output["messages"].append({"role": "assistant", "content": last_message.message.content})
+        return output
+        
+
+class LLMAntropic(LLM): #anthropic
+    import mu2e
+    def __init__(self, model="haiku"):
+        self.client = anthropic.Anthropic(api_key=mu2e.api_keys['antropic'])
+        self.models = {"haiku":"claude-3-haiku-20240307",
+                       "sonnet":"claude-3-5-sonnet-20240620",
+                       "opus":"claude-3-opus-20240229"}
+        super().__init__(model)
+        self.max_tokens = 1000
+        self.temperature = 0.7
+        self.tools = None
+
 
     def send(self, output):
-        #print("SEND")
-        #print("MESSAGE")
-        #print(output["messages"])
         if self.tools:
             return (
             self.client.beta.tools.messages.create(
@@ -202,10 +247,13 @@ class LLM(): #anthropic
             raise NotImplementedError
 
 class chat():
-    def __init__(self):
+    def __init__(self, api="antropic"):
         self.parser = InputParser()
         self.retriever = Retriever()
-        self.llm = LLM()
+        if api == "antropic":
+            self.llm = LLMAntropic()
+        elif api == "openAI":
+            self.llm = LLMopenAI()
         self.data = None
 
     def __call__(self, user_query):
@@ -231,7 +279,14 @@ class chat():
         if "settings" in self.data:
             settings = self.data["settings"]
             if "model" in settings:
-                self.llm.setModel(settings["model"])
+                new_model = settings["model"]
+                if new_model in ["sonnet","opus","haiku"]: # Antropic
+                    if not isinstance(self.llm, LLMAntropic):
+                        self.llm = LLMAntropic()
+                elif new_model in ["o4-mini","1o-mini","4o","o1-preview"]: # OpenAI
+                    if not isinstance(self.llm, LLMopenAI):
+                        self.llm = LLMopenAI()
+                self.llm.setModel(new_model)
                 print("DEBUG model:", self.llm.model)
             if "temperature" in settings:
                 self.llm.temperature = float(settings["temperature"])
