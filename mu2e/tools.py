@@ -1,4 +1,5 @@
 import json
+import os
 
 def load(docid, base_path="data/docs/"):
     """
@@ -13,6 +14,24 @@ def load(docid, base_path="data/docs/"):
     """
     # load a document from store
     dir_path = base_path+docid
+    # check if the document already exists, if not, lets try to get it
+    if not os.path.exists(dir_path):
+        if docid.startswith("mu2e-docdb"):
+            import mu2e
+            from mu2e import docdb
+            id_ = int(docid.split("-")[-1])
+            try:
+                db = docdb(mu2e.docdb_cookie)
+            except:
+                print("docdb connection failed")
+                return {'id':id_, 'revised_content':'n/a', 'title':'Document retrival failed', 'files':[]}
+            try:
+                doc = db.get(id_)
+                doc = db.parse_pdf_slides(doc, False)
+                db.save(doc, base_path)
+            except:
+                print("Something went wrong in the document retrival")
+                return {'id':id_, 'revised_content':'n/a', 'title':'Document not found', 'files':[]}
     with open(dir_path+"/meta.json", 'r') as file:
         doc = json.load(file)
     return doc

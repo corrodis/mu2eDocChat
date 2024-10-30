@@ -194,9 +194,17 @@ class docdb:
                 out['files'][i] = out['files'][i] | doc 
         return out
 
+    def parse_files(self, doc, add_image_descriptions=None):
+        """
+        Runs all implemented parsings.
+        """
+        doc_ = self.parse_pdf_slides(doc, add_image_descriptions)
+        # TODO: add additional document type parsings
+        return doc_
+    
     def parse_pdf_slides(self, doc, add_image_descriptions=None):
         """
-        Uses mu2e.paersers.pdf to parse all pdf documents of a docdb. Adds the parsed text to the doc dict. 
+        Uses mu2e.parsers.pdf to parse all pdf documents of a docdb. Adds the parsed text to the doc dict. 
 
         Args:
             doc (dict): out put from get
@@ -211,6 +219,7 @@ class docdb:
         return doc
     
     def save(self, doc, path="data/docs"):
+        from mu2e import rag
         """
         Utility to save a docdb to disk.
 
@@ -222,15 +231,19 @@ class docdb:
         import os
         doc_filtered = doc.copy()
         doc_filtered['files'] = [{k: v for k, v in f.items() if k != "document"} for f in doc_filtered['files']]
-        json_string = json.dumps(doc_filtered, indent=4)
         
         base_path = path+"/"
         docid = f"mu2e-docdb-{doc['docid']}" 
+        doc_filtered['doc_type'] = "mu2e-docdb"
+        doc_filtered['doc_id']   = docid
+        json_string = json.dumps(doc_filtered, indent=4)
         dir_path = base_path+docid
         os.makedirs(dir_path, exist_ok=True)
         full_path = dir_path+"/meta.json"
         with open(full_path, 'w') as f:
                 f.write(json_string)
+        # also generate the embedding
+        rag.doc_generate_embedding(docid)
         print(f"Data saved to {full_path}")
 
                 

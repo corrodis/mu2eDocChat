@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import re
-from mu2e import tools
+from mu2e import tools, rag
 import mu2e
 import anthropic
 from openai import OpenAI
@@ -37,11 +37,11 @@ class InputParser():
         pattern = r'\\mu2e-docdb-(\d+)'
         match = re.search(pattern, query)
         if match:
-            docs.append({"type":"mu2e-docdb", "id":match.group(1)})
+            docs.append({"type":"mu2e-docdb", "id":match.group(1), "mode":"user"})
         pattern = r'\\gm2-docdb-(\d+)'
         match = re.search(pattern, query)
         if match:
-            docs.append({"type":"gm2-docdb", "id":match.group(1)})
+            docs.append({"type":"gm2-docdb", "id":match.group(1), "mode":"user"})
             #query = re.sub(pattern, '', query).strip()
 
         # move a user tag to the system prompts (from slack for example)
@@ -59,13 +59,22 @@ class InputParser():
             if match:
                 settings[key] = match.group(1)
                 query = re.sub(pattern, '', query).strip()
-        for key in ["print-settings"]:
+        
+        settings["rag"] = False # disable RAG by default and follow up questions except it is enabled by the user
+        for key in ["print-settings","rag"]:
             pattern = r'\\'+key+r''
             match = re.search(pattern, query)
             if match:
                 settings[key] = True
                 query = re.sub(pattern, '', query).strip()
-        print("DEBUG settings", settings)
+        #print("DEBUG settings", settings)
+
+        # custom system prompt
+        pattern = r'\\system="(.*?)"'
+        match = re.search(pattern, query)
+        if match:
+            system["custom"] = match.group(1)
+            query = re.sub(pattern, '', query).strip()
                 
         return {"query": query, "docs": docs, "system": system, "settings":settings}
 
@@ -73,13 +82,16 @@ class Retriever():
     #def __init__(self, vectorstore):
     #    self.vectorstore = vectorstore
     #    self.label = "documents"
+    def __init__(self):
+        self.rag_max = 3
+        self.rag_score = 0.35
         
     def __call__(self, input):
         # check if docs are requested
         out = input
         if "docs" in input:
             for doc in input["docs"]:
-                if doc['type'] == "mu2e-docdb":
+                if (doc["type"] == "mu2e-docdb") & (doc["mode"] == "user"):
                     doc_ = tools.load(f"mu2e-docdb-{doc['id']}")
                     prompt_string = f"<document date='{doc_['revised_content']}'\
                                                title='{doc_['title']}'>"
@@ -91,6 +103,30 @@ class Retriever():
             #if "prompt" not in out:
             #    out["prompt"] = ""
             #out["prompt"] = out["prompt"] + prompt_string
+
+        # RAG
+        if "settings" in out:
+            if "rag" in out["settings"]:
+                if out["settings"]["rag"]:
+                    rag_string = "Use the inforamtion from the following documents in your answer if it fits the topic. Plase cite the used inforamtion with the provided 'docid' (format: mu2e-docdb-XXXXX) and page numbers whenever possible inline."
+                    rag_string += "<documents>"
+                    rag_sim, rag_docs = rag.find(out["query"])
+                    print("DEBUG found ", len(rag_docs), " documents. The largest score is ", rag_sim[0])
+                    for j, docid in enumerate(rag_docs):
+                        if (j >= self.rag_max) or (rag_sim[j] < self.rag_score):
+                            break
+                        doc_ = tools.load(docid)
+                        doc_type, doc_id = docid.rsplit('-', 1)
+                        out["docs"].append({"type":doc_type, "id":doc_id, "mode":"rag"})
+                        rag_string += f"<document date='{doc_['revised_content']}'\
+                                                  title='{doc_['title']}'\
+                                                  docid='{docid}'>"
+                        for d in doc_['files']:
+                            rag_string += f"<file filename='{d['filename']}' name='{d['filename']}'>\
+                                              {d['text']}</file>"
+                        rag_string += "</document>"
+                    rag_string += "</documents>"
+                    out["system"]["rag"] = rag_string
         return out
 
 
@@ -139,7 +175,7 @@ class LLMopenAI(LLM):
         self.client = OpenAI(api_key=mu2e.api_keys['openAI'])
         self.models = {"4o-mini":"gpt-4o-mini",
                        "4o":"chatgpt-4o-latest",
-                       "1o-mini":"o1-mini",
+                       "o1-mini":"o1-mini",
                        "o1-preview":"o1-preview"}
         super().__init__(model)
         
@@ -246,6 +282,25 @@ class LLMAntropic(LLM): #anthropic
         else:
             raise NotImplementedError
 
+class OutputParser():
+    def __init__(self):
+        self.usedDocuments = True
+
+    def __call__(self, out):
+        out_str = out["answer"]
+        if self.usedDocuments:
+            if "docs" in out:
+                if len(out["docs"]) > 0:
+                    out_str += "\n *Related Documents*:"
+            for doc in out["docs"]:
+                print(doc)
+                out_str += f"\n* {doc['type']}-{str(doc['id'])}"
+                if doc["type"] == "mu2e-docdb":
+                    out_str += ": https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid="+str(doc['id'])+""
+        return out_str
+        
+        
+
 class chat():
     def __init__(self, api="antropic"):
         self.parser = InputParser()
@@ -254,6 +309,7 @@ class chat():
             self.llm = LLMAntropic()
         elif api == "openAI":
             self.llm = LLMopenAI()
+        self.outparser = OutputParser()
         self.data = None
 
     def __call__(self, user_query):
@@ -266,7 +322,7 @@ class chat():
         self.data = self.retriever(self.data)
         self.data = self.llm(self.data)
         print(self.data["answer"])
-        out_str = self.data["answer"]
+        out_str = self.outparser(self.data)
         if "settings" in self.data:
             if "print-settings" in self.data["settings"]:
                 out_str += "<settings "
@@ -280,10 +336,12 @@ class chat():
             settings = self.data["settings"]
             if "model" in settings:
                 new_model = settings["model"]
+                print(new_model)
                 if new_model in ["sonnet","opus","haiku"]: # Antropic
                     if not isinstance(self.llm, LLMAntropic):
                         self.llm = LLMAntropic()
-                elif new_model in ["o4-mini","1o-mini","4o","o1-preview"]: # OpenAI
+                elif new_model in ["4o-mini","1o-mini","4o","o1-preview"]: # OpenAI
+                    print("DEBUG")
                     if not isinstance(self.llm, LLMopenAI):
                         self.llm = LLMopenAI()
                 self.llm.setModel(new_model)
