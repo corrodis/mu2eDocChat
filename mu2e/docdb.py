@@ -107,7 +107,52 @@ class docdb:
         self._check_respose(response)
         return response.text
         
-    
+    def list_latest(self, days : int = 30):
+        """
+        Get a list of the latest documents.
+
+        Args:
+            days: Number of days to list documents.
+
+        Returns:
+            A list with documents objects containing docdbid, Title, Authors, topics, last update.
+        """
+        from datetime import datetime
+        url_ = f"{self.base_url}ListBy?days={days}"
+        response = requests.get(url_, cookies=self.cookies)
+        print(response.text)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        table = soup.find('table', {'id': 'DocumentTable'})
+        if not table:
+            return []
+        documents = []
+        for row in table.find('tbody').find_all('tr'):
+            cells = row.find_all('td')
+            doc_id = cells[0].find('a').text.split("-")[0].strip()
+            title = cells[1].find('a').text.strip()
+            author_cell = cells[2]
+            authors = []
+            for author in author_cell.find_all('a'):
+                authors.append(author.text.strip())
+            if author_cell.find('i'):  # Handle "et al." case
+                authors.append("et al.")
+            topic_cell = cells[3]
+            topics = []
+            for topic in topic_cell.find_all('a'):
+                topics.append(topic.text.strip())
+            date_str = cells[4].text.strip()
+            try:
+                last_updated = datetime.strptime(date_str, '%d %b %Y')
+            except ValueError:
+                last_updated = date_str
+            doc = {"id":doc_id,
+                   "tite":title,
+                   "authors":authors,
+                   "topics":topics,
+                   "last_updated":last_updated}
+            documents.append(doc)
+        return documents
+
     def get_meta(self, doc_id : int):
         """
         Retrieve the meta data of document
