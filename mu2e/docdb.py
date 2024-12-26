@@ -1,4 +1,5 @@
 import requests
+from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 import re
 import io
@@ -11,9 +12,9 @@ class docdb:
 
     Attributes:
         base_url (str): The base URL of the docdb server.
-        cookies (dict): the cookies needed for authentification
+        cookies (dict): the cookies needed for authentification 
     """
-    def __init__(self, cookie : str, base_url : str = None):
+    def __init__(self, base_url : str = None, cookie : str = None, ):
         """
         Args:
             cookie (str): The cookie value (of mellon-sso_mu2e-docdb.fnal.gov) needed for authentifiaction. Get it from login through the browser.
@@ -21,9 +22,72 @@ class docdb:
         """
         self.cookies = {"mellon-sso_mu2e-docdb.fnal.gov": cookie}
         self.base_url = base_url if base_url else "https://mu2e-docdb.fnal.gov/cgi-bin/sso/"
+        self.session = None
+
+    def __del__(self):
+        if self.session:
+            self.session.close()
 
     def login(self):
-        pass
+        session = requests.Session() # we could change to use session.get instead of requests.get
+        
+        # Step 1: Initial request to docdb
+        response = session.get(self.base_url)
+
+        # Step 2: Submit the authentication method choice, use username/password
+        soup = BeautifulSoup(response.text, 'html.parser')
+        form = soup.find('form')
+        auth_url = urljoin('https://pingprod.fnal.gov', form['action'])
+        auth_data = {
+            'pfidpadapterid': 'ad..FormBased',  # Services Username and Password
+            'rememberChoice': 'false'
+        }
+        response = session.get(auth_url, params=auth_data)
+
+        # Step 3: Submit login credentials
+        #print("Step 3: Submitting credentials...")
+        oup = BeautifulSoup(response.text, 'html.parser')
+        login_form = soup.find('form')
+        if not login_form:
+            session.close()
+            raise ValueError("Could not find login form")
+        login_url = urljoin('https://pingprod.fnal.gov', login_form['action'])
+    
+        import mu2e # for docdb_credentials
+        login_data = {
+            'pf.username': mu2e.docdb_credentials["username"],
+            'pf.pass': mu2e.docdb_credentials["password"],
+            'pf.ok': 'clicked',
+            'pf.adapterId': 'FormBased',
+            'pf.cancel': ''
+        }
+        response = session.post(login_url, data=login_data)
+
+        # at this point we should be logged in in this session
+        # we could use response to forward to our original request if needed
+        # below I just look for its present to indicate a bad login
+        print("Step 4: Getting target URL...")
+        soup = BeautifulSoup(response.text, 'html.parser')
+        form = soup.find('form')
+        if form:
+            saml_url = form['action']
+            saml_response = form.find('input', {'name': 'SAMLResponse'})['value']
+            relay_state = form.find('input', {'name': 'RelayState'})['value']
+        
+            saml_data = {
+                'RelayState': relay_state,
+                'SAMLResponse': saml_response
+            }
+            # Submit SAML response and get redirected to the final URL
+            response = session.post(saml_url, data=saml_data)
+        else:
+            print("No SAML form found in response")
+        self.response = response.text
+
+
+
+        self.cookies = {"mellon-sso_mu2e-docdb.fnal.gov": session.cookies.get('mellon-sso_mu2e-docdb.fnal.gov')}
+        #self.session = session
 
     def _get_html(self, doc_id : int):
         """
