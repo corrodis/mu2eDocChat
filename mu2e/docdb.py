@@ -362,6 +362,17 @@ class docdb:
         rag.doc_generate_embedding(docid)
         print(f"Data saved to {full_path}")
 
-                
-        
+    def generate(self, days=30):
+        from mu2e import tools
+        latest = self.list_latest(days)
+        for doc in latest:
+            doc_ = tools.load("mu2e-docdb-"+str(doc['id']), nodb=True) # check if we already have this cached
+            if doc_ is None: # if not
+                try:
+                    doc_full = self.get(doc['id']) # download it and ...
+                    self.save(doc_full)            # generate emebding and save it 
+                except Exception as e:
+                    print(e)
+            print(doc['id'], doc_ != None)
+            
     
