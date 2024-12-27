@@ -7,7 +7,10 @@ from mcp.server import NotificationOptions, Server
 import mcp.server.stdio
 import json
 import mu2e
+from mu2e import rag
 from datetime import datetime
+import os
+import threading
 
 server = Server("docdb")
 db = mu2e.docdb(login=True)
@@ -47,6 +50,25 @@ async def handle_list_tools() -> list[types.Tool]:
                 "required": ["docid"],
             },
         ),
+        types.Tool(
+            name="rag",
+            description=f"Performs retrival from the {global_dbname} docdb using the provided query. Only cached documents are used though.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The query to perform retrieval on.",
+                    },
+                    "n": { 
+                        "type": "number", 
+                        "default": 3, 
+                        "description": "Maximal number of results to retrieve."
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
     ]
 
 
@@ -62,11 +84,11 @@ async def handle_call_tool(
         raise ValueError("Missing arguments")
   
     if name == "list":
-        n = arguments.get("days")
-        if not n:
+        days = arguments.get("days")
+        if not days:
             raise ValueError("Missing parameter days")
         else:
-            document = db.list_latest()
+            document = db.list_latest(days)
             class DateTimeEncoder(json.JSONEncoder):
                 def default(self, obj):
                     if isinstance(obj, datetime):
@@ -82,11 +104,16 @@ async def handle_call_tool(
     elif name == "get":
         docid = arguments.get("docid")
 
-        # get it streight from docdb
-        doc = db.get(docid) # get it from docdb
+        # check if we have this docid already cached
+        doc = mu2e.tools.load("mu2e-docdb-"+str(docid), nodb=True) # don't get, because I want to reuse the db connection
+        if doc is None:
+            # get it streight from docdb
+            doc = db.get(docid) # get it from docdb
+            if doc:
+                db.parse_files(doc) # parse it
+                # remove the actual file 
+                threading.Thread(target=db.save, args=(doc,), daemon=True).start()
         if doc:
-            db.parse_files(doc) # parse it
-            # remove the actual file 
             doc_filtered = doc.copy()
             doc_filtered['files'] = [{k: v for k, v in f.items() if k != "document"} for f in doc_filtered['files']]
             formated_text = json.dumps(doc_filtered, indent=4)
@@ -97,7 +124,34 @@ async def handle_call_tool(
             type="text",
             text=formated_text
         )]
+    elif name == "rag":
+        #rag_score = 0.7
+        query = arguments.get("query")
+        n = arguments.get("n") or 10
 
+  
+        rag_sim, rag_docs = mu2e.rag.find(query)
+        rag_string = f"n={n}<documents>"
+        for j, docid in enumerate(rag_docs):
+            if (j >= n):# or (rag_sim[j] < rag_score):
+                break
+            doc_ = mu2e.tools.load(docid)
+            doc_type, doc_id = docid.rsplit('-', 1)
+            rag_string += (f"<document date='{doc_['revised_content']}' "
+                                     f"title='{doc_['title']}' "
+                                     f"score='{rag_sim[j]}' "
+                                     f"link=https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid='{docid}' "
+                                     f"docid='{docid}'>")
+            for d in doc_['files']:
+                rag_string += f"<file filename='{d['filename']}' name='{d['filename']}'>\
+                                {d['text']}</file>"
+            rag_string += "</document>"
+        rag_string += "</documents>"
+        return [
+            types.TextContent(
+            type="text",
+            text=rag_string
+        )]
     else:
         raise ValueError(f"Unknown tool: {name}")
 
@@ -124,7 +178,8 @@ async def read_resource(uri: types.AnyUrl) -> str:
         return overview
     elif str(uri) == "file:///experiment/conditions":
         return " {'experiment': {'status':'construction',\
-                                 'mood':'good'}" 
+                                 'mood':'good',\
+                                 'pwd':"+os.getcwd()+"}" 
     raise ValueError("Resource not found")
 
 async def main():
