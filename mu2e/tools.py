@@ -1,7 +1,7 @@
 import json
 import os
 
-def load(docid, base_path="data/docs/"):
+def load(docid, base_path="data/docs/", nodb=False):
     """
     Loads a document from the local storage/cache.
 
@@ -16,6 +16,8 @@ def load(docid, base_path="data/docs/"):
     dir_path = base_path+docid
     # check if the document already exists, if not, lets try to get it
     if not os.path.exists(dir_path):
+        if nodb:
+            return None # don't load 
         if docid.startswith("mu2e-docdb"):
             import mu2e
             from mu2e import docdb
