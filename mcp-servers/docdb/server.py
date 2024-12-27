@@ -52,7 +52,7 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="rag",
-            description=f"Performs retrival from the {global_dbname} docdb using the provided query. Only cached documents are used though.",
+            description=f"Performs retrival from the {global_dbname} docdb using the provided query based on RAG. Only cached documents are used though.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -64,6 +64,28 @@ async def handle_list_tools() -> list[types.Tool]:
                         "type": "number", 
                         "default": 3, 
                         "description": "Maximal number of results to retrieve."
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
+        types.Tool(
+            name="search",
+            description=f"Search the {global_dbname} docdb using title, abstracts and keyword fields (AND between all words). The search can be limited to a date range (after to before). This search works best with very view keywords.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The query with the word that are search in an AND mode in title, abstract, and keyword fields.",
+                    },
+                    "before": { 
+                        "type": "number", 
+                        "description": "Date string in the format YYYY-MM-DD to search for entries before that date."
+                    },
+                    "after": { 
+                        "type": "number", 
+                        "description": "Date string in the format YYYY-MM-DD to search for entries after that date."
                     },
                 },
                 "required": ["query"],
@@ -119,6 +141,22 @@ async def handle_call_tool(
             formated_text = json.dumps(doc_filtered, indent=4)
         else:
             formated_text = f"Docdb {docid} doesn't seem to exist."
+        return [
+            types.TextContent(
+            type="text",
+            text=formated_text
+        )]
+    elif name == "search":
+        query  = arguments.get("query")
+        before = datetime.strptime(arguments["before"], "%Y-%m-%d") if arguments.get("before") else None
+        after  = datetime.strptime(arguments["after"], "%Y-%m-%d") if arguments.get("after") else None
+        document = db.search(query, before, after)
+        class DateTimeEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, datetime):
+                    return obj.isoformat()
+                return super().default(obj)
+        formated_text = json.dumps(document, indent=4, cls=DateTimeEncoder)
         return [
             types.TextContent(
             type="text",

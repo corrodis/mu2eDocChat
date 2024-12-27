@@ -6,7 +6,7 @@ def get_embedding(text, model="text-embedding-3-small"):
     """
     Generates embedings for a given text.
     
-    If the text is linger than the max allowed token, it is split and multiple embedings are returned.
+    If the text is longer than the max allowed token, it is split and multiple embedings are returned.
 
     Args:
         text(str): text to be embeded
@@ -69,6 +69,6 @@ def find(q, model="text-embedding-3-small", path="data/"):
 
     with open(path+"embeddings_ids.txt", 'r') as file:
         ids = file.readlines()
-    print("DEBUG", all_emb.shape, cosine_sim.shape, len(ids))
+    #print("DEBUG", all_emb.shape, cosine_sim.shape, len(ids))
     
     return cosine_sim[sort], [ids[id][:-1] for id in sort]

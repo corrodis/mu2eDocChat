@@ -5,6 +5,7 @@ import re
 import io
 from urllib.parse import quote
 import mu2e
+from datetime import datetime
 
 class docdb:
     """
@@ -90,7 +91,7 @@ class docdb:
 
 
         self.cookies = {"mellon-sso_mu2e-docdb.fnal.gov": session.cookies.get('mellon-sso_mu2e-docdb.fnal.gov')}
-        #self.session = session
+        self.session = session
 
     def _get_html(self, doc_id : int):
         """
@@ -110,21 +111,8 @@ class docdb:
         self._check_respose(response)
         return response.text
         
-    def list_latest(self, days : int = 30):
-        """
-        Get a list of the latest documents.
-
-        Args:
-            days: Number of days to list documents.
-
-        Returns:
-            A list with documents objects containing docdbid, Title, Authors, topics, last update.
-        """
-        from datetime import datetime
-        url_ = f"{self.base_url}ListBy?days={days}"
-        response = requests.get(url_, cookies=self.cookies)
-        #print(response.text)
-        soup = BeautifulSoup(response.text, 'html.parser')
+    def _parse_list(self, text):
+        soup = BeautifulSoup(text, 'html.parser')
         table = soup.find('table', {'id': 'DocumentTable'})
         if not table:
             return []
@@ -157,6 +145,63 @@ class docdb:
                    "link:":link}
             documents.append(doc)
         return documents
+
+
+    def list_latest(self, days : int = 30):
+        """
+        Get a list of the latest documents.
+
+        Args:
+            days: Number of days to list documents.
+
+        Returns:
+            A list with documents objects containing docdbid, Title, Authors, topics, last update.
+        """
+        from datetime import datetime
+        url_ = f"{self.base_url}ListBy?days={days}"
+        response = requests.get(url_, cookies=self.cookies)
+        #print(response.text)
+        return self._parse_list(response.text)
+
+    def search(self, text : str = None, before : datetime = None, after : datetime = None):
+        data = {
+            "outerlogic": "AND",
+            "innerlogic": "OR",
+            "mode": "date",
+            "titlesearchmode": "allword",
+            "abstractsearchmode": "allword",
+            "keywordsearchmode": "allword",
+            "revisionnotesearchmode": "allword",
+            "pubinfosearchmode": "allword",
+            "filesearchmode": "allword",
+            "filedescsearchmode": "allword",
+            "includesubtopics": "on"
+        }
+        if text:
+            data["titlesearch"] = text
+            data["abstractsearch"] = text
+            data["keywordsearch"] = text
+        if before:
+            data["beforeday"] = str(before.day)
+            data["beforemonth"] = before.strftime("%b")
+            data["beforeyear"] = str(before.year)
+        else:
+            data["beforeday"] = "--"
+            data["beforemonth"] = "---"
+            data["beforeyear"] = "----"
+
+        if after:
+            data["afterday"] = str(after.day)
+            data["aftermonth"] = after.strftime("%b")
+            data["afteryear"] = str(after.year)
+        else:
+            data["afterday"] = "--"
+            data["aftermonth"] = "---"
+            data["afteryear"] = "----"
+        print(data)
+        response = self.session.post(self.base_url+"/Search", data=data, )
+        return self._parse_list(response.text)
+
 
     def get_meta(self, doc_id : int):
         """
