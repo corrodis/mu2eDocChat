@@ -13,8 +13,9 @@ class docdb:
     Attributes:
         base_url (str): The base URL of the docdb server.
         cookies (dict): the cookies needed for authentification 
+        bool (bool): login
     """
-    def __init__(self, base_url : str = None, cookie : str = None, ):
+    def __init__(self, base_url : str = None, cookie : str = None, login : bool = True):
         """
         Args:
             cookie (str): The cookie value (of mellon-sso_mu2e-docdb.fnal.gov) needed for authentifiaction. Get it from login through the browser.
@@ -23,6 +24,8 @@ class docdb:
         self.cookies = {"mellon-sso_mu2e-docdb.fnal.gov": cookie}
         self.base_url = base_url if base_url else "https://mu2e-docdb.fnal.gov/cgi-bin/sso/"
         self.session = None
+        if login:
+            self.login()
 
     def __del__(self):
         if self.session:
@@ -66,7 +69,7 @@ class docdb:
         # at this point we should be logged in in this session
         # we could use response to forward to our original request if needed
         # below I just look for its present to indicate a bad login
-        print("Step 4: Getting target URL...")
+        #print("Step 4: Getting target URL...")
         soup = BeautifulSoup(response.text, 'html.parser')
         form = soup.find('form')
         if form:
@@ -120,7 +123,7 @@ class docdb:
         from datetime import datetime
         url_ = f"{self.base_url}ListBy?days={days}"
         response = requests.get(url_, cookies=self.cookies)
-        print(response.text)
+        #print(response.text)
         soup = BeautifulSoup(response.text, 'html.parser')
         table = soup.find('table', {'id': 'DocumentTable'})
         if not table:
@@ -130,6 +133,7 @@ class docdb:
             cells = row.find_all('td')
             doc_id = cells[0].find('a').text.split("-")[0].strip()
             title = cells[1].find('a').text.strip()
+            link = cells[1].find('a').get('href')
             author_cell = cells[2]
             authors = []
             for author in author_cell.find_all('a'):
@@ -149,7 +153,8 @@ class docdb:
                    "tite":title,
                    "authors":authors,
                    "topics":topics,
-                   "last_updated":last_updated}
+                   "last_updated":last_updated,
+                   "link:":link}
             documents.append(doc)
         return documents
 
@@ -297,6 +302,8 @@ class docdb:
             RuntimeError: if no response, see _check_respose
         """
         out = self.get_meta(doc_id)
+        if out is None:
+            return out
         if 'files' in out:
             for i, file in enumerate(out['files']):
                 doc = self.get_document_url(file['link'])
