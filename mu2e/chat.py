@@ -3,6 +3,8 @@ import re
 from mu2e import tools, rag
 import mu2e
 import anthropic
+import json
+import requests
 from openai import OpenAI
 from abc import ABC, abstractmethod
 
@@ -168,6 +170,41 @@ class LLM(ABC): # virtual LLM base class
         system += self.system_post
         return system
         
+class LLMArgo(LLM):
+    def __init__(self, model="argo-4o"):
+        self.url = "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
+        self.headers = {"Content-Type": "application/json"}
+        self.user = "scorrodi"
+        self.models = {"argo-4o":"gpt4o",
+                       "argo-o1":"gpto1preview"}
+        self.temperature = 0.1 
+        self.top_p = 0.9
+        self.max_tokens = 1000
+        super().__init__(model)
+    
+
+    def send(self, output):
+        data = {
+            "user": self.user,
+            "model": self.model,
+            "system": output["system"] ,
+            "messages":output["messages"],
+            "stop": [],
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "max_tokens": self.max_tokens,
+            "max_completion_tokens": self.max_tokens
+        }
+        response = requests.post(self.url, 
+                                 data=json.dumps(data), 
+                                 headers=self.headers)
+        return response.json()['response']   
+ 
+    def process(self, output):
+        last_message = output['llm'][ -1]
+        output["answer"] = last_message
+        output["messages"].append({"role": "assistant", "content": last_message})
+        return output
 
 class LLMopenAI(LLM):
     import mu2e
@@ -344,6 +381,9 @@ class chat():
                     print("DEBUG")
                     if not isinstance(self.llm, LLMopenAI):
                         self.llm = LLMopenAI()
+                elif new_model in ["argo-4o","argo-o1"]: # Argo
+                    if not isinstance(self.llm, LLMArgo):
+                        self.llm = LLMArgo()
                 self.llm.setModel(new_model)
                 print("DEBUG model:", self.llm.model)
             if "temperature" in settings:
