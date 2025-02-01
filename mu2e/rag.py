@@ -1,6 +1,9 @@
 import numpy as np
 from mu2e import tools
 import os
+from .utils import get_data_dir
+from pathlib import Path
+
 
 def get_embedding(text, model="text-embedding-3-small"):
     """
@@ -15,10 +18,21 @@ def get_embedding(text, model="text-embedding-3-small"):
     Returns:
         embedings(vector(
     """
-    from openai import OpenAI
-    import mu2e
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        raise ValueError(
+            "OpenAI API key not found. Please set the OPENAI_API_KEY environment variable."
+        )
+
+    try:
+        from openai import OpenAI
+    except ImportError:
+        raise ImportError(
+            "The 'openAI' package is required for embedding generation. "
+            "Please install it with: pip install openai"
+        )    
     import tiktoken
-    client = OpenAI(api_key=mu2e.api_keys['openAI'])
+    client = OpenAI(api_key=api_key)
     encoding = tiktoken.encoding_for_model(model)
     num_tokens = len(encoding.encode(text))
     # max token is 8191
@@ -34,10 +48,12 @@ def get_embedding(text, model="text-embedding-3-small"):
     return np.array([e.embedding for e in emb.data])
 
 
-def doc_generate_embedding(docid, model="text-embedding-3-small", path="data/"):
+def doc_generate_embedding(docid, model="text-embedding-3-small", path=None):
+    base_path = Path(path if path else get_data_dir())
     doc = tools.load(docid)
     if "files" in doc:
         embs = None
+        print("DEBUG!", doc["files"])
         for file in doc["files"]:
             emb = get_embedding(file['text'], model=model)
             print("Number of generated embedings ("+file['filename']+"): ", len(emb))
@@ -45,20 +61,22 @@ def doc_generate_embedding(docid, model="text-embedding-3-small", path="data/"):
                 embs = emb
             else:
                 embs = np.concatenate((embs, emb))
-        emb_file_path = path+"embeddings.npy"
+        emb_file_path = base_path / "embeddings.npy"
         if os.path.exists(emb_file_path):
-            allEmbeddings = np.load(path+"embeddings.npy")
+            allEmbeddings = np.load(emb_file_path)
+            print("DEBUG:", allEmbeddings.shape, embs.shape)
             allEmbeddings = np.concatenate((allEmbeddings, embs))
         else:
             allEmbeddings = embs
         np.save(emb_file_path, allEmbeddings)
-        with open(path+"embeddings_ids.txt", "a") as f:
+        with open(base_path / "embeddings_ids.txt", "a") as f:
             for k in range(embs.shape[0]):
                 f.write(docid + "\n")
         
 
-def find(q, model="text-embedding-3-small", path="data/"):
-    all_emb = np.load(path+"embeddings.npy")
+def find(q, model="text-embedding-3-small", path=None):
+    base_path = Path(path if path else get_data_dir())
+    all_emb = np.load(base_path / "embeddings.npy")
     q_emb = get_embedding(q, model=model)
     dot_product = np.dot(q_emb,all_emb.T)
 
@@ -67,7 +85,7 @@ def find(q, model="text-embedding-3-small", path="data/"):
     cosine_sim = dot_product.flatten() / (emb_magnitude.flatten() * q_emb_magnitude.flatten())
     sort = np.argsort(cosine_sim.flatten())[::-1]
 
-    with open(path+"embeddings_ids.txt", 'r') as file:
+    with open(base_path / "embeddings_ids.txt", 'r') as file:
         ids = file.readlines()
     #print("DEBUG", all_emb.shape, cosine_sim.shape, len(ids))
     

@@ -13,6 +13,8 @@ import os
 import threading
 
 server = Server("docdb")
+print("test")
+
 db = mu2e.docdb(login=True)
 
 @server.list_tools()

@@ -1,12 +1,12 @@
 from abc import ABC, abstractmethod
 import re
 from mu2e import tools, rag
-import mu2e
 import anthropic
 import json
 import requests
 from openai import OpenAI
 from abc import ABC, abstractmethod
+import os
 
 # input parser
 class InputParser():
@@ -14,6 +14,71 @@ class InputParser():
     Parses direct user input for the use in the mu2e ML/AI agent.
     This parser allows to encode settings in the user string that we might want to remove from the actual user query that is processed.
     """
+    @staticmethod
+    def list_commands(print_help: bool = False) -> dict:
+        """
+        Returns all available command arguments that can be used in queries.
+        
+        Args:
+            print_help (bool): If True, prints a nicely formatted help message.
+                             If False, just returns the commands dictionary.        
+
+        Returns:
+            dict: Dictionary of commands and their descriptions
+        """
+        commands = {
+            # Model selection
+            "\\model=<name>": {
+                "description": "Select LLM model to use",
+                "examples": ["\\model=sonnet", "\\model=haiku", "\\model=4o-mini"],
+                "values": {
+                    "Anthropic": ["sonnet", "haiku", "opus"],
+                    "OpenAI": ["4o-mini", "4o", "o1-mini", "o1-preview"],
+                    "Argo": ["argo-4o", "argo-o1"]
+                }
+            },
+            
+            # RAG
+            "\\rag": {
+                "description": "Enable RAG (Retrieval Augmented Generation)",
+                "example": "\\rag What is the latest status of the tracker?"
+            },
+            
+            # Document reference
+            "\\mu2e-docdb-<number>": {
+                "description": "Reference specific DocDB document",
+                "example": "\\mu2e-docdb-51478 What does this document say?"
+            },
+            
+            # Temperature
+            "\\temperature=<value>": {
+                "description": "Set temperature for LLM response (0.0-1.0)",
+                "example": "\\temperature=0.7"
+            },
+            
+            # Settings
+            "\\print-settings": {
+                "description": "Show current settings in response"
+            }
+        }
+
+        if print_help:
+            print("\nAvailable Commands for Mu2e Chat:")
+            print("=" * 40)
+            for cmd, info in commands.items():
+                print(f"\n{cmd}")
+                print(f"  {info['description']}")
+                if 'example' in info:
+                    print(f"  Example: {info['example']}")
+                if 'examples' in info:
+                    print(f"  Examples: {', '.join(info['examples'])}")
+                if 'values' in info:
+                    print("  Available values:")
+                    for api, models in info['values'].items():
+                        print(f"    {api}: {', '.join(models)}")
+            print("\n" + "=" * 40)
+
+        return commands
     def __init__(self):
         pass
     def __call__(self, user_query):
@@ -207,9 +272,11 @@ class LLMArgo(LLM):
         return output
 
 class LLMopenAI(LLM):
-    import mu2e
     def __init__(self, model="4o-mini"):
-        self.client = OpenAI(api_key=mu2e.api_keys['openAI'])
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            raise ValueError("OpenAI API key not found. Please set OPENAI_API_KEY environment variable")
+        self.client = OpenAI(api_key=api_key)
         self.models = {"4o-mini":"gpt-4o-mini",
                        "4o":"chatgpt-4o-latest",
                        "o1-mini":"o1-mini",
@@ -238,9 +305,11 @@ class LLMopenAI(LLM):
         
 
 class LLMAntropic(LLM): #anthropic
-    import mu2e
-    def __init__(self, model="haiku"):
-        self.client = anthropic.Anthropic(api_key=mu2e.api_keys['antropic'])
+    def __init__(self, model="sonnet"):
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            raise ValueError("Anthropic API key not found. Please set ANTHROPIC_API_KEY environment variable")
+        self.client = anthropic.Anthropic(api_key=api_key)
         self.models = {"haiku":"claude-3-haiku-20240307",
                        "sonnet":"claude-3-5-sonnet-20240620",
                        "opus":"claude-3-opus-20240229"}

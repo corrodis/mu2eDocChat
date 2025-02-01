@@ -4,7 +4,7 @@ import base64
 import io
 from PIL import Image
 import numpy as np
-
+import os
 
 class pdf:
     """
@@ -194,10 +194,18 @@ class pdf:
         Returns:
             dict: image_id, summary
         """
-        import mu2e # for the api key
+        #import mu2e # for the api key
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+             print("Warning: ANTHROPIC_API_KEY not set, skipping image descriptions with claude.")
+             return []
+
         import requests
         import json
         images_ = images if images else self.images
+        # limit to max 100 images
+        if len(images_)>99:
+            images_ = images_[:100]
         text_ = extracted_text if extracted_text else self.text
         
         models = {"haiku":"claude-3-haiku-20240307",
@@ -208,7 +216,7 @@ class pdf:
         
         headers = {
             "Content-Type": "application/json",
-            "x-api-key": mu2e.api_keys['antropic'],
+            "x-api-key": api_key,
             "anthropic-version": "2023-06-01"
         }
         imgs_payload = []
@@ -222,8 +230,20 @@ class pdf:
                   The summaires will be used to replace the [ImageXX], it should add additional inforamtion and avoud repeating the inforamtion already present in the text."
         prompt += "Start each summary with Image...\
                    The summary will be used to genrate document embedings. \
-                   Please return only the summary in a json format with the format [{image_id:ImageXX, summary=SUMAMRY},{image_id:ImageYY, summary=SUMAMRY},....]\
-                   Avoid any premble text other than this list of json objects."
+                   Format requirements:\
+                   - Use double quotes for all strings\
+                   - No trailing commas\
+                   - Array should be properly wrapped in square brackets\
+                   - Each object should have exact format {\"image_id\": \"ImageXX\", \"summary\": \"SUMMARY\"}\
+                   - No comments or additional text\
+                   Example of expected format:\
+[\
+  {\"image_id\": \"Image1\", \"summary\": \"A red car parked on street\"},\
+  {\"image_id\": \"Image2\", \"summary\": \"A brown dog sleeping\"}\
+]\
+                  Important: Return a single JSON array containing all summaries, not separate JSON objects.\
+                  Use only straight quotes in JSON. For quoted terms within summaries, use single quotes (') or escaped double quotes (\\\").\
+                  Do not include [ImageX] headers."
         if text_:
             prompt += "<presentation>"+text_+"<\presentation>"
         payload = {
@@ -237,7 +257,7 @@ class pdf:
             }
         response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload)
         if response.status_code != 200:
-            raise RuntimeError(f"Somethign went wrong with the request to anthropic: {response.json}")
+            raise RuntimeError(f"Somethign went wrong with the request to anthropic: {response.json()}")
 
         answer = json.loads(response.content.decode())
         out_text = answer['content'][0]['text']
@@ -256,7 +276,11 @@ class pdf:
         Returns:
             dict: image_id, summary
         """
-        import mu2e
+        #import mu2e
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            print("Warning: OPENAI_API_KEY not set, skipping image descriptions with OpenAI.")
+            return []
         import requests
 
         images_ = images if images else self.images
@@ -268,7 +292,7 @@ class pdf:
         
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {mu2e.api_keys['openAI']}"
+            "Authorization": f"Bearer {api_key}"
         }
         imgs_payload = []
         for i, img in enumerate(images_):
@@ -336,7 +360,33 @@ class pdf:
         text_ = text if text else self.text
         images_ = images if images else self.images
         summaries = self.images_get_description(images_, text_, method)
-        summaries_ = json.loads(summaries)
+        summaries = fix_json_quotes(summaries)
+        try:
+           summaries_ = json.loads(summaries)
+        except:
+           print(summaries)
+           raise
         self.text = self._add_image_descriptions(summaries_, text_)
         return self.text
+
+def fix_json_quotes(text):
+    # Fix all types of quotes that might appear
+    replacements = {
+        '"': '"',  # Replace curly double quotes
+        '"': '"',
+        '"': '"',
+        ''': "'",  # Replace curly single quotes
+        ''': "'",
+        '′': "'",  # Replace prime marks
+        '″': '"',
+        '‟': '"',  # Replace other Unicode quote variants
+        '„': '"',
+        '「': '"',
+        '」': '"'
+    }
+    
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    
+    return text
 

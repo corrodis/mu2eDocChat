@@ -1,16 +1,21 @@
-Work in progress for a LLM driven chat bot accessing the public mu2e wiki.
+# Mu2e Docdb Interface
 
-Work in progress list of required python packages
+A Python interface to the Mu2e docdb with support for document retrieval, RAG (Retrieval-Augmented Generation), and LLM chat interface.
 
-Before the example can be used, an embeding for the wiki data needs to be generated. That is done with
-```
-python getWiki.py
-```
-This will generate a "database" with the wikidata and the corresponding embeddings in "data/" folder.
+## Setup
+For installation and setup instructions see here: doc/instlllation.md
 
-Ones that file is present, questions about the mu2e wiki can be asked by the code below (see also examples/SimpleAskExample.ipynb) 
-```
-import mu2e;
-answer = mu2e.ask("What is mu2e?")
-print(answer.content[0].text)
-```
+## Command Line Interface
+### mu2e-docdb
+The package provides a command-line tool `mu2e-docdb` with the following commands (just run `mu2e-docdb` for help):
+- List documents from the last day `mu2e-docdb list`
+- Generation of local databse (vector-database) used for RAG: `mu2e-docdb generate --days 10`
+- RAG Search to retrieve most relevant documents: `mu2e-docdb search "mu2e timeline"`
+
+### mu2e-chat
+LLM based chat interface to docdb (run `mu2e-chat --help` for help):
+- starting an interactive mode (allowing threads) by typing `mu2e-chat` (CTRL-C to quit)
+- single question mode: `mu2e-chat "\\rag What is the latest timeline?"`
+
+### mu2e-slack
+This commands runs a docdb chat with a slack interface. For more details see doc/slack.md.

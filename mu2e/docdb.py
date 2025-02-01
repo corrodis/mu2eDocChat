@@ -4,8 +4,10 @@ from bs4 import BeautifulSoup
 import re
 import io
 from urllib.parse import quote
-import mu2e
 from datetime import datetime
+import os
+from . import parser
+from .utils import get_data_dir
 
 class docdb:
     """
@@ -13,8 +15,29 @@ class docdb:
 
     Attributes:
         base_url (str): The base URL of the docdb server.
-        cookies (dict): the cookies needed for authentification 
-        bool (bool): login
+        cookies (dict): if you already have an active session and want to use a cooke-string from that. No longer needed. Defaults to None.
+        bool (bool): if True a new session is started with the credentials from the environment variables MU2E_DOCDB_USERNAME, MU2E_DOCDB_PASSWORD. Defaulkts to True.
+
+    Example:
+	```python
+	from mu2e.docdb import docdb
+
+	# Initialize client
+	db = docdb() # defaults to mu2e
+	# db = docdb() for g-2 docdb
+
+	# List documents from last 3 days
+	db.list_latest(days=3)
+
+	# Get a document by ID
+	doc = db.get(51472)
+
+	# The document contains:
+	print(doc['title'])        # Document title
+	print(doc['abstract'])     # Document abstract
+	print(doc['files'])        # List of files with content
+	print(doc['topics'])       # List of topics
+	```
     """
     def __init__(self, base_url : str = None, cookie : str = None, login : bool = True):
         """
@@ -26,6 +49,16 @@ class docdb:
         self.base_url = base_url if base_url else "https://mu2e-docdb.fnal.gov/cgi-bin/sso/"
         self.session = None
         if login:
+            missing = []
+            if not os.getenv('MU2E_DOCDB_USERNAME'):
+                missing.append('MU2E_DOCDB_USERNAME')
+            if not os.getenv('MU2E_DOCDB_PASSWORD'):
+                missing.append('MU2E_DOCDB_PASSWORD')
+            if missing:
+                raise ValueError(
+                    f"Missing required environment variables: {', '.join(missing)}. "
+                    "Please set these environment variables."
+                )
             self.login()
 
     def __del__(self):
@@ -59,8 +92,8 @@ class docdb:
     
         import mu2e # for docdb_credentials
         login_data = {
-            'pf.username': mu2e.docdb_credentials["username"],
-            'pf.pass': mu2e.docdb_credentials["password"],
+            'pf.username': os.getenv('MU2E_DOCDB_USERNAME'),
+            'pf.pass': os.getenv('MU2E_DOCDB_PASSWORD'),
             'pf.ok': 'clicked',
             'pf.adapterId': 'FormBased',
             'pf.cancel': ''
@@ -289,11 +322,15 @@ class docdb:
             
         """
         if(response.ok):
-            soup = BeautifulSoup(response.text, 'html.parser')
-            page_title = soup.title.string if soup.title else None
-            if page_title:
-                if page_title == "Select Authentication System":
-                    raise RuntimeError(f"New login required. Log in to {self.base_url} in your browser, use the new cookie (mellon-sso_mu2e-docdb.fnal.gov) in the docdb constructor.")
+            #print(response.text)
+            try:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                page_title = soup.title.string if soup.title else None
+                if page_title:
+                    if page_title == "Select Authentication System":
+                        raise RuntimeError(f"New login required. Log in to {self.base_url} in your browser, use the new cookie (mellon-sso_mu2e-docdb.fnal.gov) in the docdb constructor.")
+            except:
+                pass
         else:
             raise RuntimeError(f"The connection to {response.url} failed with status {response.status_code}:"+response.json())
     
@@ -322,7 +359,7 @@ class docdb:
         """
         Wrapper for get_document_url allowing to access document via doc_id, filename, version.
         
-        Args:
+        Argsself.:
             doc_id (int)
             file_name(str)
             version(int,optional): defaults to 1
@@ -373,51 +410,60 @@ class docdb:
         """
         for i, file in enumerate(doc['files']):
             if file['type'] == "pdf":
-                p = mu2e.parser.pdf(file['document'])
+                p = parser.pdf(file['document'])
                 p.get_sldies_text()
                 text_out = p.add_image_descriptions()
                 doc['files'][i]['text'] = text_out
         return doc
     
-    def save(self, doc, path="data/docs"):
+    def save(self, doc, path=None):
         from mu2e import rag
         """
         Utility to save a docdb to disk.
 
         Args:
             doc (dict): out put from get (or get_meta)
-            path (str, optional): direcotry path to store the data. Default is data/docs.
+            path (str, optional): direcotry path to store the data. 
+                                  If None, uses MU2E_DATA_DIR or ~/.mu2e/data
         """
         import json
         import os
         doc_filtered = doc.copy()
         doc_filtered['files'] = [{k: v for k, v in f.items() if k != "document"} for f in doc_filtered['files']]
         
-        base_path = path+"/"
+        if path is None:
+            path = get_data_dir()
+        base_path = path
         docid = f"mu2e-docdb-{doc['docid']}" 
         doc_filtered['doc_type'] = "mu2e-docdb"
         doc_filtered['doc_id']   = docid
         json_string = json.dumps(doc_filtered, indent=4)
-        dir_path = base_path+docid
+        dir_path = base_path / docid
         os.makedirs(dir_path, exist_ok=True)
-        full_path = dir_path+"/meta.json"
+        full_path = dir_path / "meta.json"
         with open(full_path, 'w') as f:
                 f.write(json_string)
         # also generate the embedding
         rag.doc_generate_embedding(docid)
         print(f"Data saved to {full_path}")
 
-    def generate(self, days=30):
+    def generate(self, days=30, force_reload=False):
         from mu2e import tools
         latest = self.list_latest(days)
         for doc in latest:
-            doc_ = tools.load("mu2e-docdb-"+str(doc['id']), nodb=True) # check if we already have this cached
+            if doc['id'] in ['51208','44716','51194']:
+                continue
+            doc_ = None
+            if not force_reload:
+            	doc_ = tools.load("mu2e-docdb-"+str(doc['id']), nodb=True) # check if we already have this cached
             if doc_ is None: # if not
-                try:
+                if True:
+                #try:
                     doc_full = self.get(doc['id']) # download it and ...
+                    self.parse_files(doc_full)
                     self.save(doc_full)            # generate emebding and save it 
-                except Exception as e:
-                    print(e)
+                #except Exception as e:
+                #    print(e)
             print(doc['id'], doc_ != None)
             
     

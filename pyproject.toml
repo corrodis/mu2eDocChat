@@ -1,0 +1,41 @@
+[project]
+name = "mu2e"
+version = "0.2.0"
+description = "mu2e docdb and LLM interface"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "beautifulsoup4",
+    "httpx",
+    "pdfplumber",
+    "requests",
+    "urllib3",
+    "tiktoken",
+    "numpy",
+    "python-dotenv",
+    "openai>=1.0.0",
+    "anthropic"
+]
+
+[project.optional-dependencies]
+minimal = [
+    "beautifulsoup4",
+    "httpx",
+    "pdfplumber",
+    "requests",
+    "numpy",
+    "python-dotenv"
+]
+slack = [
+    "slack_sdk",
+    "pytz"
+]
+
+[build-system]
+requires = [ "hatchling",]
+build-backend = "hatchling.build"
+
+[project.scripts]
+mu2e-docdb = "mu2e.cli.docdb_cli:main"
+mu2e-chat = "mu2e.cli.chat_cli:main"
+mu2e-slack = "mu2e.cli.slack_cli:main"

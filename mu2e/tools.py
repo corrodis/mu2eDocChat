@@ -1,7 +1,9 @@
 import json
 import os
+from pathlib import Path
+from .utils import get_data_dir
 
-def load(docid, base_path="data/docs/", nodb=False):
+def load(docid, base_path=None, nodb=False):
     """
     Loads a document from the local storage/cache.
 
@@ -13,7 +15,7 @@ def load(docid, base_path="data/docs/", nodb=False):
         dic: doc meta data and list with files
     """
     # load a document from store
-    dir_path = base_path+docid
+    dir_path = Path(base_path if base_path else get_data_dir()) / docid
     # check if the document already exists, if not, lets try to get it
     if not os.path.exists(dir_path):
         if nodb:
@@ -23,7 +25,7 @@ def load(docid, base_path="data/docs/", nodb=False):
             from mu2e import docdb
             id_ = int(docid.split("-")[-1])
             try:
-                db = docdb(mu2e.docdb_cookie)
+                db = docdb()
             except:
                 print("docdb connection failed")
                 return {'id':id_, 'revised_content':'n/a', 'title':'Document retrival failed', 'files':[]}
@@ -34,7 +36,7 @@ def load(docid, base_path="data/docs/", nodb=False):
             except:
                 print("Something went wrong in the document retrival")
                 return {'id':id_, 'revised_content':'n/a', 'title':'Document not found', 'files':[]}
-    with open(dir_path+"/meta.json", 'r') as file:
+    with open(dir_path / "meta.json", 'r') as file:
         doc = json.load(file)
     return doc
 

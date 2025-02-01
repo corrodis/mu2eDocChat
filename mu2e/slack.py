@@ -7,6 +7,7 @@ from slack_sdk.errors import SlackApiError
 import time
 from datetime import datetime
 import pytz
+import os
 
 class slack:
     """
@@ -21,9 +22,19 @@ class slack:
         Args:
             channel_name(str): name of the channel to be used
         """
-        self.client = WebClient(mu2e.api_keys['slack'])
-        self.socket = SocketModeClient(app_token=mu2e.api_keys['slack-app'])
+        self.bot_token = os.getenv('MU2E_SLACK_BOT_TOKEN')
+        self.app_token = os.getenv('MU2E_SLACK_APP_TOKEN')
+        
+        if not self.bot_token:
+            raise ValueError("Slack bot token not found. Please set MU2E_SLACK_BOT_TOKEN environment variable")
+        if not self.app_token:
+            raise ValueError("Slack app token not found. Please set MU2E_SLACK_APP_TOKEN environment variable")
+
+        self.client = WebClient(self.bot_token)
+        self.socket = SocketModeClient(app_token=self.app_token)
         self.channel_id = self._find_channel_id(channel_name)
+        if not self.channel_id:
+            raise ValueError(f"Could not find channel: {channel_name}")
         self.latest_ts = time.time()
         self.threads = {} # store active threads
         self.processor = p
@@ -162,4 +173,4 @@ class p:
     def __call__(self, msg):
         self.cnt = self.cnt + 1
         print(f"{self.cnt}) {msg}")
-        return "done"
+        return f"Processed message #{self.cnt}"
