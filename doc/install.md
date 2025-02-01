@@ -8,7 +8,7 @@ python -m venv --clear .venv
 ```
 
 ## Development mode
-
+Run the following in the base folder of the cloned repository (only needs to be done ones)
 ```bash
 pip install -e .
 ```
