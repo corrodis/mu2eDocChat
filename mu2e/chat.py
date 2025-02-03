@@ -178,7 +178,7 @@ class Retriever():
                     rag_string = "Use the inforamtion from the following documents in your answer if it fits the topic. Plase cite the used inforamtion with the provided 'docid' (format: mu2e-docdb-XXXXX) and page numbers whenever possible inline."
                     rag_string += "<documents>"
                     rag_sim, rag_docs = rag.find(out["query"])
-                    print("DEBUG found ", len(rag_docs), " documents. The largest score is ", rag_sim[0])
+                    #print("DEBUG found ", len(rag_docs), " documents. The largest score is ", rag_sim[0])
                     for j, docid in enumerate(rag_docs):
                         if (j >= self.rag_max) or (rag_sim[j] < self.rag_score):
                             break
@@ -332,7 +332,7 @@ class LLMAntropic(LLM): #anthropic
                 messages=output["messages"])
             )
         else:
-            print("DEBUG", self.system(output))
+            #print("DEBUG", self.system(output))
             return (
             self.client.messages.create(
                 model=self.model,
@@ -399,7 +399,7 @@ class OutputParser():
                 if len(out["docs"]) > 0:
                     out_str += "\n *Related Documents*:"
             for doc in out["docs"]:
-                print(doc)
+                #print(doc)
                 out_str += f"\n* {doc['type']}-{str(doc['id'])}"
                 if doc["type"] == "mu2e-docdb":
                     out_str += ": https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid="+str(doc['id'])+""
@@ -419,7 +419,7 @@ class chat():
         self.data = None
 
     def __call__(self, user_query):
-        print("TEST", user_query)
+        #print("TEST", user_query)
         if not self.data:
             self.data = self.parser(user_query)
         else:
@@ -427,7 +427,7 @@ class chat():
         self.updateSettings()
         self.data = self.retriever(self.data)
         self.data = self.llm(self.data)
-        print(self.data["answer"])
+        #print(self.data["answer"])
         out_str = self.outparser(self.data)
         if "settings" in self.data:
             if "print-settings" in self.data["settings"]:
@@ -447,14 +447,14 @@ class chat():
                     if not isinstance(self.llm, LLMAntropic):
                         self.llm = LLMAntropic()
                 elif new_model in ["4o-mini","1o-mini","4o","o1-preview"]: # OpenAI
-                    print("DEBUG")
+                    #print("DEBUG")
                     if not isinstance(self.llm, LLMopenAI):
                         self.llm = LLMopenAI()
                 elif new_model in ["argo-4o","argo-o1"]: # Argo
                     if not isinstance(self.llm, LLMArgo):
                         self.llm = LLMArgo()
                 self.llm.setModel(new_model)
-                print("DEBUG model:", self.llm.model)
+                #print("DEBUG model:", self.llm.model)
             if "temperature" in settings:
                 self.llm.temperature = float(settings["temperature"])
-                print("DEBUG model:", self.llm.temperature)
+                #print("DEBUG model:", self.llm.temperature)

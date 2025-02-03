@@ -231,7 +231,7 @@ class docdb:
             data["afterday"] = "--"
             data["aftermonth"] = "---"
             data["afteryear"] = "----"
-        print(data)
+        #print(data)
         response = self.session.post(self.base_url+"/Search", data=data, )
         return self._parse_list(response.text)
 
@@ -464,6 +464,7 @@ class docdb:
                     self.save(doc_full)            # generate emebding and save it 
                 #except Exception as e:
                 #    print(e)
-            print(doc['id'], doc_ != None)
+            #print(doc['id'], doc_ != None)
+            #print(doc['id'], doc_ != None)
             
     

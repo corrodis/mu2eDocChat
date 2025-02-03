@@ -53,7 +53,7 @@ def doc_generate_embedding(docid, model="text-embedding-3-small", path=None):
     doc = tools.load(docid)
     if "files" in doc:
         embs = None
-        print("DEBUG!", doc["files"])
+        #print("DEBUG!", doc["files"])
         for file in doc["files"]:
             emb = get_embedding(file['text'], model=model)
             print("Number of generated embedings ("+file['filename']+"): ", len(emb))
@@ -64,7 +64,7 @@ def doc_generate_embedding(docid, model="text-embedding-3-small", path=None):
         emb_file_path = base_path / "embeddings.npy"
         if os.path.exists(emb_file_path):
             allEmbeddings = np.load(emb_file_path)
-            print("DEBUG:", allEmbeddings.shape, embs.shape)
+            #print("DEBUG:", allEmbeddings.shape, embs.shape)
             allEmbeddings = np.concatenate((allEmbeddings, embs))
         else:
             allEmbeddings = embs
