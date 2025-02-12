@@ -14,7 +14,8 @@ dependencies = [
     "numpy",
     "python-dotenv",
     "openai>=1.0.0",
-    "anthropic"
+    "anthropic",
+    "bm25s"
 ]
 
 [project.optional-dependencies]
@@ -24,7 +25,8 @@ minimal = [
     "pdfplumber",
     "requests",
     "numpy",
-    "python-dotenv"
+    "python-dotenv",
+    "bm25s"
 ]
 slack = [
     "slack_sdk",

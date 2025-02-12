@@ -1,5 +1,6 @@
 import json
 import os
+import numpy as np
 from pathlib import Path
 from .utils import get_data_dir
 
@@ -93,3 +94,46 @@ def _get_summary_claude(doc, model):
         print(answer)
         doc['files'][i]['summary'] = answer['content'][0]['text']
     return doc
+
+def get_full_text(base_path = None):
+    """
+    Loads all documents from the local storage/cache.
+    
+    Args:
+        base_path(str, optional): base path of the documents. Defaults to data/docs/.
+    
+    Returns:
+        list: List of document dictionaries containing meta data and files
+    """
+    base_dir = Path(base_path if base_path else get_data_dir())
+    documents = []
+    ids = []
+    
+    # Get all mu2e-docdb-* directories
+    doc_dirs = [d for d in base_dir.iterdir() if d.is_dir() and d.name.startswith('mu2e-docdb-')]
+    
+    for dir_path in doc_dirs:
+        try:
+            # Extract docid from directory name
+            docid = dir_path.name
+            
+            # Load document using existing load function
+            doc = load(docid, base_path=base_path, nodb=True)
+            if doc is not None:
+                for file in doc['files']:
+                    documents.append(file['text'])
+                    ids.append(docid)
+                
+        except Exception as e:
+            print(f"Error loading document from {dir_path}: {str(e)}")
+            continue
+    
+    return documents, np.array(ids)
+
+def full_text_search(query, k=5, base_path = None):
+    import bm25s
+    corpus, ids = get_full_text()
+    retriever = bm25s.BM25()
+    retriever.index(bm25s.tokenize(corpus))
+    idx, scores = retriever.retrieve(bm25s.tokenize(query), k=k)
+    return ids[idx[0]], scores[0]
