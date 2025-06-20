@@ -7,17 +7,18 @@ import os
 
 
 class ArgoEmbeddingFunction(EmbeddingFunction):
-    def __init__(self, user: str, model: str = "v3small"):
+    def __init__(self, user: str, model: str = "v3small", url=None):
         """
         Custom embedding function for Argo API
         
         Args:
-            user: Username for the API
-            model: One of 'ada002', 'v3large', 'v3small'
+            user (str, optional): Username for the API
+            model (str, optional): One of 'ada002', 'v3large', 'v3small'
+            url (str, optional): Argo URL, defaults to https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/embed/
         """
         self.user = user
         self.model = model
-        self.url = "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/embed/"
+        self.url = url or "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/embed/"
         self.headers = {"Content-Type": "application/json"}
         
         # Set dimensions based on model
@@ -26,6 +27,8 @@ class ArgoEmbeddingFunction(EmbeddingFunction):
             "v3large": 3072, 
             "v3small": 1536
         }
+        
+        #self.max_input = 8191
     
     def __call__(self, input: Documents) -> List[List[float]]:
         """
@@ -70,12 +73,14 @@ def _get_client():
     return _client
 
 
-def get_collection(user=None, model="v3small"):  
+def get_collection(user=None, model="v3small", url=None):  
     collection_name = f"mu2e_argo_{model}"
-    embedding_func = ArgoEmbeddingFunction(user=user or os.environ.get('USER'), model=model)
+    embedding_func = ArgoEmbeddingFunction(user=user or os.environ.get('USER'), model=model, url=url)
         
     client = _get_client()
-    return client.get_or_create_collection(
+    c = client.get_or_create_collection(
             name=collection_name,
             embedding_function=embedding_func
         )
+    c.max_input = 8191
+    return c

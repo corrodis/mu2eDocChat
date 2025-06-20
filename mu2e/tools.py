@@ -4,50 +4,113 @@ import numpy as np
 from pathlib import Path
 from dotenv import load_dotenv
 from .utils import get_data_dir
-# hack from https://gist.github.com/defulmere/8b9695e415a44271061cc8e272f3c300
-__import__('pysqlite3')
-import sys
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+from .chunking import chunk_text_simple
+import sqlite3
+from packaging import version
+if version.parse(sqlite3.sqlite_version) < version.parse("3.35.0"):
+    # hack from https://gist.github.com/defulmere/8b9695e415a44271061cc8e272f3c300
+    __import__('pysqlite3')
+    import sys
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import chromadb
+import tiktoken
 
 def getDefaultCollection():
     client = chromadb.PersistentClient() # TODO: add path/and or server mode
     return client.get_or_create_collection(name=os.getenv('MU2E_CHROMA_COLLECTION_NAME') or "mu2e_default")
 
 
-def saveInCollection(doc, collection=None):
+def saveInCollection(doc, collection=None, chunking_strategy="default"):
     """
-
+    Save document to ChromaDB collection with text chunking.
+    
+    Args:
+        doc: Document dictionary with 'files' key
+        collection: ChromaDB collection (optional)
+        chunk_size: Target chunk size in tokens
+        chunk_overlap: Overlap between chunks in tokens
+        chunking_strategy: Strategy for chunking ('semantic', 'sentence', 'paragraph', 'token')
     """
     load_dotenv()
 
     docid = f"mu2e-docdb-{doc['docid']}"
-    meta = {k: v for k, v in doc.items() if k != "files"}
-    meta['doc_type'] = "mu2e-docdb"
-    meta['doc_id']   = docid
-    if 'topics' in meta:
-        meta['topics'] = ", ".join(meta['topics'])
-    if 'keyword' in meta:
-        meta['keyword'] = ", ".join(meta['keyword'])
+    base_meta = {k: v for k, v in doc.items() if k != "files"}
+    base_meta['doc_type'] = "mu2e-docdb"
+    base_meta['doc_id'] = docid
+    if 'topics' in base_meta:
+        base_meta['topics'] = ", ".join(base_meta['topics'])
+    if 'keyword' in base_meta:
+        base_meta['keyword'] = ", ".join(base_meta['keyword'])
 
-    documents_ = [d['text'] for d in doc['files']]
-    meta['topics'] = ", ".join(meta['topics'])
-    metadatas_ = [meta | {k: v for k, v in d.items() if k not in {"text", "document"}} for d in doc['files']]
-    ids_ = [f"{docid}_{i}" for i in range(len(doc['files']))]
+    documents_ = []
+    metadatas_ = []
+    ids_ = []
+
+    # Process each file and create chunks
+    for file_idx, file_data in enumerate(doc['files']):
+        text = file_data.get('text', '')
+        if not text.strip():
+            continue
+            
+        # Create chunks for this file
+        chunk_size = 256 # defailt for all-MiniLM-L6-v2
+        if collection:
+            if hasattr(collection, 'max_input'):
+                chunk_size = collection.max_input # 8000 for OpenAI models
+            
+        chunk_overlap = int(0.2 * chunk_size)
+        chunks = chunk_text_simple(
+            text, 
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            strategy=chunking_strategy
+        )
+        
+        # Create ChromaDB entries for each chunk
+        for chunk_idx, chunk_text in enumerate(chunks):
+            # Create metadata for this chunk
+            chunk_meta = base_meta.copy()
+            chunk_meta.update({k: v for k, v in file_data.items() if k not in {"text", "document"}})
+            chunk_meta['chunk_id'] = chunk_idx
+            chunk_meta['total_chunks'] = len(chunks)
+            chunk_meta['file_index'] = file_idx
+            chunk_meta['chunk_size'] = chunk_size
+            chunk_meta['chunk_overlap'] = chunk_overlap
+            chunk_meta['chunking_strategy'] = chunking_strategy
+            
+            # Create unique ID: docid_fileindex_chunkindex
+            chunk_id = f"{docid}_{file_idx}_{chunk_idx}"
+            
+            documents_.append(chunk_text)
+            metadatas_.append(chunk_meta)
+            ids_.append(chunk_id)
 
     collection = collection or getDefaultCollection() 
 
     if len(ids_) < 1:
-        print(f"{docid} has no documents")
+        print(f"{docid} has no documents/chunks to store")
         return 
     
+    print(f"Storing {len(ids_)} chunks for document {docid}")
     collection.upsert(
         documents=documents_,
         metadatas=metadatas_,
         ids=ids_)
 
 
-def loadFromCollection(docid, nodb=False, collection=None):
+def loadFromCollection(docid, nodb=False, collection=None, reconstruct_files=True):
+    """
+    Load document from ChromaDB collection, handling chunked data.
+    
+    Args:
+        docid: Document ID to load
+        nodb: Not used in this version
+        collection: ChromaDB collection (optional)
+        reconstruct_files: If True, combine chunks back into original files
+        
+    Returns:
+        Document dictionary with reconstructed files or individual chunks
+    """
     collection = collection or getDefaultCollection()
 
     if not docid.startswith("mu2e-docdb-"):
@@ -60,18 +123,70 @@ def loadFromCollection(docid, nodb=False, collection=None):
     if len(results['ids']) < 1:
         return None
 
-    out = {'files':[]}
-   
-    for k, v in results['metadatas'][0].items():
-        if k not in {'link', 'filename','type','document'}:
+    # Initialize document structure
+    out = {'files': []}
+    
+    # Get base metadata from first result (excluding chunk-specific fields)
+    base_metadata = results['metadatas'][0]
+    for k, v in base_metadata.items():
+        if k not in {'chunk_id', 'total_chunks', 'file_index', 'chunk_size', 
+                    'chunk_overlap', 'chunking_strategy', 'link', 'filename', 'type', 'document'}:
             out[k] = v
-
+    
+    if not reconstruct_files:
+        # Return individual chunks
+        for i, (document, metadata) in enumerate(zip(results['documents'], results['metadatas'])):
+            chunk_data = {'text': document}
+            for k, v in metadata.items():
+                if k not in out:
+                    chunk_data[k] = v
+            out['files'].append(chunk_data)
+        return out
+    
+    # Group chunks by file_index
+    files_chunks = {}
     for i, (document, metadata) in enumerate(zip(results['documents'], results['metadatas'])):
-        file_data = {'text': document}
-        for k, v in metadata.items():
+        file_idx = metadata.get('file_index', 0)
+        chunk_idx = metadata.get('chunk_id', 0)
+        
+        if file_idx not in files_chunks:
+            files_chunks[file_idx] = {}
+            
+        files_chunks[file_idx][chunk_idx] = {
+            'text': document,
+            'metadata': metadata
+        }
+    encoding = tiktoken.get_encoding("cl100k_base")
+    # Reconstruct files by combining chunks
+    for file_idx in sorted(files_chunks.keys()):
+        chunk_dict = files_chunks[file_idx]
+        
+        # Sort chunks by chunk_id and combine text
+        sorted_chunks = sorted(chunk_dict.items())
+        combined_text = ""
+        file_metadata = {}
+        
+        for chunk_id, chunk_data in sorted_chunks:
+            if chunk_id == 0:
+                combined_text = chunk_data['text']
+                # Use metadata from first chunk for file-level metadata
+                file_metadata = {k: v for k, v in chunk_data['metadata'].items() 
+                               if k not in {'chunk_id', 'total_chunks', 'file_index', 
+                                          'chunk_size', 'chunk_overlap', 'chunking_strategy'}}
+            else:
+                chunk_overlap_tokens = int(chunk_data['metadata'].get('chunk_overlap', 0))
+                tokens = encoding.encode(chunk_data['text'])
+                text_to_add = encoding.decode(tokens[chunk_overlap_tokens:])
+                combined_text += text_to_add
+        
+        # Create file entry
+        file_data = {'text': combined_text}
+        for k, v in file_metadata.items():
             if k not in out:
                 file_data[k] = v
+                
         out['files'].append(file_data)
+    
     return out
 
 def load2(docid, nodb=False, collection=None):
