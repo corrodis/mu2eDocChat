@@ -3,9 +3,10 @@ import os
 import numpy as np
 from pathlib import Path
 from dotenv import load_dotenv
-from .utils import get_data_dir
+from .utils import get_data_dir, convert_to_timestamp
 from .chunking import chunk_text_simple
 import sqlite3
+from datetime import datetime
 from packaging import version
 if version.parse(sqlite3.sqlite_version) < version.parse("3.35.0"):
     # hack from https://gist.github.com/defulmere/8b9695e415a44271061cc8e272f3c300
@@ -77,6 +78,10 @@ def saveInCollection(doc, collection=None, chunking_strategy="default"):
             chunk_meta['chunk_size'] = chunk_size
             chunk_meta['chunk_overlap'] = chunk_overlap
             chunk_meta['chunking_strategy'] = chunking_strategy
+            
+            # Add timestamp fields for better date filtering
+            chunk_meta['created_timestamp'] = convert_to_timestamp(chunk_meta.get('created'))
+            chunk_meta['revised_timestamp'] = convert_to_timestamp(chunk_meta.get('revised_content'))
             
             # Create unique ID: docid_fileindex_chunkindex
             chunk_id = f"{docid}_{file_idx}_{chunk_idx}"
@@ -299,45 +304,5 @@ def _get_summary_claude(doc, model):
         doc['files'][i]['summary'] = answer['content'][0]['text']
     return doc
 
-def get_full_text(base_path = None):
-    """
-    Loads all documents from the local storage/cache.
-    
-    Args:
-        base_path(str, optional): base path of the documents. Defaults to data/docs/.
-    
-    Returns:
-        list: List of document dictionaries containing meta data and files
-    """
-    base_dir = Path(base_path if base_path else get_data_dir())
-    documents = []
-    ids = []
-    
-    # Get all mu2e-docdb-* directories
-    doc_dirs = [d for d in base_dir.iterdir() if d.is_dir() and d.name.startswith('mu2e-docdb-')]
-    
-    for dir_path in doc_dirs:
-        try:
-            # Extract docid from directory name
-            docid = dir_path.name
-            
-            # Load document using existing load function
-            doc = load(docid, base_path=base_path, nodb=True)
-            if doc is not None:
-                for file in doc['files']:
-                    documents.append(file['text'])
-                    ids.append(docid)
-                
-        except Exception as e:
-            print(f"Error loading document from {dir_path}: {str(e)}")
-            continue
-    
-    return documents, np.array(ids)
 
-def full_text_search(query, k=5, base_path = None):
-    import bm25s
-    corpus, ids = get_full_text()
-    retriever = bm25s.BM25()
-    retriever.index(bm25s.tokenize(corpus))
-    idx, scores = retriever.retrieve(bm25s.tokenize(query), k=k)
-    return ids[idx[0]], scores[0]
+

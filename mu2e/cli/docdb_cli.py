@@ -1,10 +1,12 @@
 # mu2e/cli.py
 import argparse
 from mu2e.docdb import docdb
-from mu2e import rag, tools
+from mu2e import search, tools, anl
 
 def main():
     parser = argparse.ArgumentParser(description='Mu2e DocDB utilities')
+    parser.add_argument('--argo', action='store_true',
+                       help='Use Argo embeddings instead of default collection')
     subparsers = parser.add_subparsers(dest='command', help='Commands')
     
     # Generate database
@@ -12,11 +14,15 @@ def main():
     generate_parser.add_argument('--days', type=int, default=30,
                                help='Number of days to look back (default: 30)')
     
-    # RAG Search
-    search_parser = subparsers.add_parser('search', help='Search documents using RAG')
+    # Vector Search
+    search_parser = subparsers.add_parser('search', help='Vector search in documents')
     search_parser.add_argument('query', type=str, help='Search query')
     search_parser.add_argument('--top', type=int, default=3,
                              help='Number of results to show (default: 3)')
+    search_parser.add_argument('--fulltext', action='store_true',
+                             help='Use full-text search instead of vector search')
+    search_parser.add_argument('--days', type=int,
+                             help='Limit search to documents from last N days')
 
     # List command
     list_parser = subparsers.add_parser('list', help='List recent documents')
@@ -26,23 +32,44 @@ def main():
     args = parser.parse_args()
     
     if args.command == 'generate':
-        print(f"Generating embeddings for documents from the last {args.days} days...")
+        collection = anl.get_collection() if args.argo else None
+        collection_type = "Argo" if args.argo else "default"
+        print(f"Generating {collection_type} embeddings for documents from the last {args.days} days...")
         db = docdb()
-        db.generate(days=args.days)
+        db.generate(days=args.days, collection=collection)
         print("Done!")
         
     elif args.command == 'search':
-        print(f"RAG lookup for: '{args.query}'")
-        scores, doc_ids = rag.find(args.query)
+        # Select collection
+        collection = anl.get_collection() if args.argo else None
+        collection_type = "Argo" if args.argo else "default"
         
-        print("\nTop matches:")
-        for score, doc_id in zip(scores[:args.top], doc_ids[:args.top]):
-            doc = tools.load(doc_id)
-            print(f"\nScore: {score:.3f}")
-            print(f"Title: {doc['title']}")
-            print(f"Link: https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid={doc['docid']}")
-            if 'abstract' in doc:
-                print(f"Abstract: {doc['abstract'][:200]}...")
+        # Perform search
+        if args.fulltext:
+            print(f"Full-text search for: '{args.query}'")
+            results = search.search_fulltext(args.query, n_results=args.top, collection=collection)
+            search_type = "Full-text"
+        else:
+            print(f"Vector search using {collection_type} embeddings for: '{args.query}'")
+            # Vector search with optional date filtering
+            if args.days:
+                results = search.search_by_date(args.query, days_back=args.days, 
+                                               collection=collection, n_results=args.top)
+            else:
+                results = search.search(args.query, collection=collection, n_results=args.top)
+            search_type = "Vector"
+        
+        print(f"\n{search_type} search results:")
+        for i, (doc_text, distance, doc_id, metadata) in enumerate(zip(
+            results['documents'], results['distances'], results['ids'], results['metadata']
+        )):
+            print(f"\n{i+1}. Distance: {distance:.3f}")
+            print(f"Title: {metadata.get('title', 'N/A')}")
+            print(f"DocID: {metadata.get('docid', 'N/A')}")
+            print(f"Link: https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid={metadata.get('docid', 'N/A')}")
+            if 'abstract' in metadata:
+                print(f"Abstract: {metadata['abstract'][:200]}...")
+            print(f"Chunk: {doc_text[:300]}...")
             print("-" * 80)
 
     elif args.command == 'list':

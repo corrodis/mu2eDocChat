@@ -1,5 +1,7 @@
 from pathlib import Path
 import os
+from datetime import datetime
+from typing import Union, Optional
 
 def get_data_dir():
     """Get the data directory for docdb storage, creating it if necessary."""
@@ -26,3 +28,43 @@ def get_data_dir():
             )
     
     return default_dir
+
+
+def convert_to_timestamp(date_input: Union[str, datetime, int]) -> Optional[int]:
+    """
+    Convert various date formats to Unix timestamp.
+    
+    Args:
+        date_input: Date as string, datetime object, or timestamp
+        
+    Returns:
+        Unix timestamp (int) or None if conversion fails
+    """
+    if date_input is None:
+        return None
+    
+    if isinstance(date_input, int):
+        return date_input
+    
+    if isinstance(date_input, datetime):
+        return int(date_input.timestamp())
+    
+    if isinstance(date_input, str):
+        try:
+            # Handle format like '20 Jun 2025, 02:04'
+            dt = datetime.strptime(date_input, '%d %b %Y, %H:%M')
+            return int(dt.timestamp())
+        except ValueError:
+            try:
+                # Handle format like '20 Jun 2025'
+                dt = datetime.strptime(date_input, '%d %b %Y')
+                return int(dt.timestamp())
+            except ValueError:
+                try:
+                    # Handle ISO format
+                    dt = datetime.fromisoformat(date_input)
+                    return int(dt.timestamp())
+                except ValueError:
+                    return None
+    
+    return None
