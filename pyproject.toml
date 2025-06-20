@@ -15,7 +15,8 @@ dependencies = [
     "python-dotenv",
     "openai>=1.0.0",
     "anthropic",
-    "bm25s"
+    "bm25s",
+    "chromadb"
 ]
 
 [project.optional-dependencies]

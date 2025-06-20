@@ -48,6 +48,7 @@ class docdb:
         self.cookies = {"mellon-sso_mu2e-docdb.fnal.gov": cookie}
         self.base_url = base_url if base_url else "https://mu2e-docdb.fnal.gov/cgi-bin/sso/"
         self.session = None
+        self.collection = None # chromadb
         if login:
             missing = []
             if not os.getenv('MU2E_DOCDB_USERNAME'):
@@ -411,10 +412,23 @@ class docdb:
         for i, file in enumerate(doc['files']):
             if file['type'] == "pdf":
                 p = parser.pdf(file['document'])
-                p.get_sldies_text()
-                text_out = p.add_image_descriptions()
+                text_out,_ = p.get_sldies_text()
+                if add_image_descriptions:
+                    text_out = p.add_image_descriptions()
                 doc['files'][i]['text'] = text_out
         return doc
+  
+    def saveFiles(self, doc):
+        import os
+        path = get_data_dir()
+        docid = f"mu2e-docdb-{doc['docid']}"
+        dir_path = path / docid
+        os.makedirs(dir_path, exist_ok=True)
+        if 'files' in doc:
+            for f in doc['files']:
+                with open(dir_path / f['text'], 'wb') as f_:
+                    f_.write(f['document'].getvalue())
+
     
     def save(self, doc, path=None):
         from mu2e import rag

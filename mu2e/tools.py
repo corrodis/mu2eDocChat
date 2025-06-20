@@ -3,6 +3,35 @@ import os
 import numpy as np
 from pathlib import Path
 from .utils import get_data_dir
+# hack from https://gist.github.com/defulmere/8b9695e415a44271061cc8e272f3c300
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+import chromadb
+
+def saveInCollection(doc, collection=None):
+    """
+
+    """
+    docid = f"mu2e-docdb-{doc['docid']}"
+    meta = {k: v for k, v in doc.items() if k != "files"}
+    meta['doc_type'] = "mu2e-docdb"
+    meta['doc_id']   = docid
+    meta['topics'] = ", ".join(meta['topics'])
+
+    documents_ = [d['text'] for d in doc['files']]
+    metadatas_ = [meta | {k: v for k, v in d.items() if k not in {"text", "document"}} for d in doc['files']]
+    ids_ = [f"{docid}_{i}" for i in range(len(doc['files']))]
+
+    if collection is None:
+        client = chromadb.PersistentClient() # TODO: add path/and or server mode
+        collection = client.get_or_create_collection(name="mu2e_default")
+
+    collection.upsert(
+        documents=documents_,
+        metadatas=metadatas_,
+        ids=ids_)
+
 
 def load(docid, base_path=None, nodb=False):
     """
