@@ -21,3 +21,6 @@ LLM based chat interface to docdb (run `mu2e-chat --help` for help):
 
 ### mu2e-slack
 This commands runs a docdb chat with a slack interface. For more details see doc/slack.md.
+
+### mu2e-mcp-server
+Model Context Protocol (MCP) server for integration with Claude Desktop and other MCP-compatible AI assistants. Provides vector search, full-text search, and document retrieval tools. See mu2e/mcp/docdb/ for setup instructions.

@@ -60,7 +60,7 @@ async def handle_list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
-            name="vector_search",
+            name="search",
             description=f"Find relevant documents in the {dbname} database using semantic similarity. Best for conceptual queries and finding related content.",
             inputSchema={
                 "type": "object",
@@ -80,7 +80,7 @@ async def handle_list_tools() -> list[types.Tool]:
                     },
                     "filters": {
                         "type": "object",
-                        "description": "Optional: Advanced ChromaDB filters (see metadata schema for examples)."
+                        "description": "Optional: Advanced ChromaDB filters. See file:///schema/metadata resource for available fields and filter examples."
                     },
                 },
                 "required": ["query"],
@@ -103,14 +103,14 @@ async def handle_list_tools() -> list[types.Tool]:
                     },
                     "filters": {
                         "type": "object",
-                        "description": "Optional: Advanced ChromaDB filters (see metadata schema for examples)."
+                        "description": "Optional: Advanced ChromaDB filters. See file:///schema/metadata resource for available fields and filter examples."
                     },
                 },
                 "required": ["query"],
             },
         ),
         types.Tool(
-            name="search",
+            name="docdb_search",
             description=f"Search the {dbname} docdb using title, abstracts and keyword fields (AND between all words).",
             inputSchema={
                 "type": "object",
@@ -172,7 +172,7 @@ async def handle_call_tool(
             formated_text = f"Docdb {docid} doesn't seem to exist."
         return [types.TextContent(type="text", text=formated_text)]
 
-    elif name == "search":
+    elif name == "docdb_search":
         query = arguments.get("query")
         before = datetime.strptime(arguments["before"], "%Y-%m-%d") if arguments.get("before") else None
         after = datetime.strptime(arguments["after"], "%Y-%m-%d") if arguments.get("after") else None
@@ -185,7 +185,7 @@ async def handle_call_tool(
         formated_text = json.dumps(document, indent=4, cls=DateTimeEncoder)
         return [types.TextContent(type="text", text=formated_text)]
 
-    elif name == "vector_search":
+    elif name == "search":
         query = arguments.get("query")
         n_results = arguments.get("n_results", 5)
         days = arguments.get("days")
