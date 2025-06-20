@@ -2,6 +2,7 @@ import json
 import os
 import numpy as np
 from pathlib import Path
+from dotenv import load_dotenv
 from .utils import get_data_dir
 # hack from https://gist.github.com/defulmere/8b9695e415a44271061cc8e272f3c300
 __import__('pysqlite3')
@@ -9,29 +10,88 @@ import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import chromadb
 
+def getDefaultCollection():
+    client = chromadb.PersistentClient() # TODO: add path/and or server mode
+    return client.get_or_create_collection(name=os.getenv('MU2E_CHROMA_COLLECTION_NAME') or "mu2e_default")
+
+
 def saveInCollection(doc, collection=None):
     """
 
     """
+    load_dotenv()
+
     docid = f"mu2e-docdb-{doc['docid']}"
     meta = {k: v for k, v in doc.items() if k != "files"}
     meta['doc_type'] = "mu2e-docdb"
     meta['doc_id']   = docid
-    meta['topics'] = ", ".join(meta['topics'])
+    if 'topics' in meta:
+        meta['topics'] = ", ".join(meta['topics'])
+    if 'keyword' in meta:
+        meta['keyword'] = ", ".join(meta['keyword'])
 
     documents_ = [d['text'] for d in doc['files']]
+    meta['topics'] = ", ".join(meta['topics'])
     metadatas_ = [meta | {k: v for k, v in d.items() if k not in {"text", "document"}} for d in doc['files']]
     ids_ = [f"{docid}_{i}" for i in range(len(doc['files']))]
 
-    if collection is None:
-        client = chromadb.PersistentClient() # TODO: add path/and or server mode
-        collection = client.get_or_create_collection(name="mu2e_default")
+    collection = collection or getDefaultCollection() 
 
+    if len(ids_) < 1:
+        print(f"{docid} has no documents")
+        return 
+    
     collection.upsert(
         documents=documents_,
         metadatas=metadatas_,
         ids=ids_)
 
+
+def loadFromCollection(docid, nodb=False, collection=None):
+    collection = collection or getDefaultCollection()
+
+    if not docid.startswith("mu2e-docdb-"):
+        full_docid = f"mu2e-docdb-{docid}"
+    else:
+        full_docid = docid
+
+    results = collection.get(where={"doc_id": full_docid})
+    
+    if len(results['ids']) < 1:
+        return None
+
+    out = {'files':[]}
+   
+    for k, v in results['metadatas'][0].items():
+        if k not in {'link', 'filename','type','document'}:
+            out[k] = v
+
+    for i, (document, metadata) in enumerate(zip(results['documents'], results['metadatas'])):
+        file_data = {'text': document}
+        for k, v in metadata.items():
+            if k not in out:
+                file_data[k] = v
+        out['files'].append(file_data)
+    return out
+
+def load2(docid, nodb=False, collection=None):
+    out = loadFromCollection(docid, nodb=False, collection=collection)
+    if out:
+        return out
+    if nodb:
+        return None
+    # else get it  
+    try:
+        db = docdb()
+    except:
+        print("docdb connection failed")
+        return {'id':id_, 'revised_content':'n/a', 'title':'Document retrival failed', 'files':[]}
+    try:
+        id_ = int(docid.split("-")[-1])
+        return  db.get_parse_store(id_)
+    except:
+        print("Something went wrong in the document retrival")
+        return {'id':id_, 'revised_content':'n/a', 'title':'Document not found', 'files':[]}
 
 def load(docid, base_path=None, nodb=False):
     """
