@@ -5,6 +5,7 @@ import io
 from PIL import Image
 import numpy as np
 import os
+from tqdm import tqdm
 
 class pdf:
     """
@@ -99,8 +100,7 @@ class pdf:
         images = []
         image_cnt = 0
         with pdfplumber.open(self.doc) as pdf:
-            for i, page in enumerate(pdf.pages):
-                print(i+1)
+            for i, page in enumerate(tqdm(pdf.pages, desc="Processing pages")):
                 #if i not in [4]:
                 #    continue
                 crop_box = (0, 0, page.width, page.height *0.96)

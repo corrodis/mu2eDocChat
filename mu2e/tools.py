@@ -3,7 +3,7 @@ import os
 import numpy as np
 from pathlib import Path
 from dotenv import load_dotenv
-from .utils import get_data_dir, convert_to_timestamp
+from .utils import get_data_dir, convert_to_timestamp, get_chroma_path
 from .chunking import chunk_text_simple
 import sqlite3
 from datetime import datetime
@@ -15,9 +15,10 @@ if version.parse(sqlite3.sqlite_version) < version.parse("3.35.0"):
     sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import chromadb
 import tiktoken
+from tqdm import tqdm
 
 def getDefaultCollection():
-    client = chromadb.PersistentClient() # TODO: add path/and or server mode
+    client = chromadb.PersistentClient(path=get_chroma_path())
     return client.get_or_create_collection(name=os.getenv('MU2E_CHROMA_COLLECTION_NAME') or "mu2e_default")
 
 
@@ -303,6 +304,59 @@ def _get_summary_claude(doc, model):
         print(answer)
         doc['files'][i]['summary'] = answer['content'][0]['text']
     return doc
+
+
+def generate_from_local(collection=None, chunking_strategy="default", base_path=None):
+    """
+    Generate embeddings from all locally stored documents (meta.json files) into a ChromaDB collection.
+    This is useful for regenerating collections with different settings without re-downloading.
+    
+    Args:
+        collection: ChromaDB collection (uses default if None)
+        base_path: Base path for documents (defaults to ~/.mu2e/data)
+        
+    Returns:
+        int: Number of documents successfully processed
+    """
+    base_dir = Path(base_path if base_path else get_data_dir())
+    
+    if not base_dir.exists():
+        print(f"Data directory {base_dir} does not exist")
+        return 0
+    
+    # Find all mu2e-docdb-* directories
+    doc_dirs = [d for d in base_dir.iterdir() if d.is_dir() and d.name.startswith('mu2e-docdb-')]
+    
+    if not doc_dirs:
+        print("No documents found in data directory")
+        return 0
+
+    print(f"Generating embeddings for {len(doc_dirs)} documents")
+    
+    processed_count = 0
+    
+    for doc_dir in tqdm(doc_dirs, desc="Processing documents"):
+        meta_file = doc_dir / "meta.json"
+        
+        if not meta_file.exists():
+            print(f"Warning: meta.json not found in {doc_dir}")
+            continue
+            
+        try:
+            # Load the document metadata
+            with open(meta_file, 'r') as f:
+                doc = json.load(f)
+            
+            # Save to collection with specified settings
+            saveInCollection(doc, collection=collection, chunking_strategy=chunking_strategy)
+            processed_count += 1
+            
+        except Exception as e:
+            print(f"Error processing {doc_dir.name}: {str(e)}")
+            continue
+    
+    print(f"Successfully processed {processed_count} documents")
+    return processed_count
 
 
 

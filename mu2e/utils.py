@@ -29,6 +29,15 @@ def get_data_dir():
     
     return default_dir
 
+def get_chroma_path():
+    c_dir = os.getenv('MU2E_CHROMA_PATH')
+    if c_dir:
+        return Path(c_dir)
+    
+    default_dir = Path.home() / '.mu2e' / 'chroma'
+    default_dir.mkdir(parents=True, exist_ok=True)
+    return default_dir
+
 
 def convert_to_timestamp(date_input: Union[str, datetime, int]) -> Optional[int]:
     """

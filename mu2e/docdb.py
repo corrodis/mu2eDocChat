@@ -431,7 +431,7 @@ class docdb:
 
     
     def saveMetaJson(self, doc, path=None):
-        from mu2e import rag
+        #from mu2e import rag
         """
         Utility to save a docdb to disk.
 
