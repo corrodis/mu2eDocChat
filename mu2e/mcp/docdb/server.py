@@ -7,7 +7,7 @@ from mcp.server import NotificationOptions, Server
 import mcp.server.stdio
 import json
 import mu2e
-from mu2e import rag
+from mu2e import search, tools, anl
 from datetime import datetime
 import os
 import threading
@@ -60,19 +60,50 @@ async def handle_list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
-            name="rag",
-            description=f"Performs retrival from the {dbname} docdb using the provided query based on RAG. Only cached documents are used though.",
+            name="vector_search",
+            description=f"Find relevant documents in the {dbname} database using semantic similarity. Best for conceptual queries and finding related content.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "The query to perform retrieval on.",
+                        "description": "The query to search for semantically similar content.",
                     },
-                    "n": { 
+                    "n_results": { 
                         "type": "number", 
-                        "default": 3, 
-                        "description": "Maximal number of results to retrieve."
+                        "default": 5, 
+                        "description": "Maximum number of documents to retrieve."
+                    },
+                    "days": {
+                        "type": "number",
+                        "description": "Optional: Limit search to documents from last N days."
+                    },
+                    "filters": {
+                        "type": "object",
+                        "description": "Optional: Advanced ChromaDB filters (see metadata schema for examples)."
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
+        types.Tool(
+            name="fulltext_search",
+            description=f"Search for specific keywords or phrases in {dbname} documents. Best for finding exact terms, names, or technical details.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Keywords or phrases to search for in document text.",
+                    },
+                    "n_results": { 
+                        "type": "number", 
+                        "default": 5, 
+                        "description": "Maximum number of documents to retrieve."
+                    },
+                    "filters": {
+                        "type": "object",
+                        "description": "Optional: Advanced ChromaDB filters (see metadata schema for examples)."
                     },
                 },
                 "required": ["query"],
@@ -154,31 +185,63 @@ async def handle_call_tool(
         formated_text = json.dumps(document, indent=4, cls=DateTimeEncoder)
         return [types.TextContent(type="text", text=formated_text)]
 
-    elif name == "rag":
+    elif name == "vector_search":
         query = arguments.get("query")
-        n = arguments.get("n", 10)
-        rag_sim, rag_docs = mu2e.rag.find(query)
-        rag_string = f"n={n}<documents>"
-        for j, docid in enumerate(rag_docs):
-            if j >= n:
-                break
-            doc_ = mu2e.tools.load(docid)
-            doc_type, doc_id = docid.rsplit('-', 1)
-            rag_string += (
-                f"<document date='{doc_['revised_content']}' "
-                f"title='{doc_['title']}' "
-                f"score='{rag_sim[j]}' "
-                f"link=https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid='{docid}' "
-                f"docid='{docid}'>"
+        n_results = arguments.get("n_results", 5)
+        days = arguments.get("days")
+        filters = arguments.get("filters")
+        
+        # Perform search based on parameters
+        if days:
+            results = search.search_by_date(query, days_back=days, n_results=n_results, filters=filters)
+        else:
+            results = search.search(query, n_results=n_results, filters=filters)
+        
+        # Format results for LLM consumption
+        response_text = f"<search_results query='{query}' type='vector' count='{results['n_results']}'>\n"
+        
+        for i, (doc_text, distance, doc_id, metadata) in enumerate(zip(
+            results['documents'], results['distances'], results['ids'], results['metadata']
+        )):
+            response_text += (
+                f"<document rank='{i+1}' "
+                f"distance='{distance:.3f}' "
+                f"docid='{metadata.get('docid', 'N/A')}' "
+                f"title='{metadata.get('title', 'N/A')}' "
+                f"date='{metadata.get('created', 'N/A')}' "
+                f"link='{metadata.get('link', 'N/A')}'>\n"
+                f"<chunk>{doc_text}</chunk>\n"
+                f"</document>\n"
             )
-            for d in doc_['files']:
-                rag_string += (
-                    f"<file filename='{d['filename']}' name='{d['filename']}'>"
-                    f"{d['text']}</file>"
-                )
-            rag_string += "</document>"
-        rag_string += "</documents>"
-        return [types.TextContent(type="text", text=rag_string)]
+        
+        response_text += "</search_results>"
+        return [types.TextContent(type="text", text=response_text)]
+    
+    elif name == "fulltext_search":
+        query = arguments.get("query")
+        n_results = arguments.get("n_results", 5)
+        filters = arguments.get("filters")
+        
+        results = search.search_fulltext(query, n_results=n_results, filters=filters)
+        
+        # Format results for LLM consumption
+        response_text = f"<search_results query='{query}' type='fulltext' count='{results['n_results']}'>\n"
+        
+        for i, (doc_text, distance, doc_id, metadata) in enumerate(zip(
+            results['documents'], results['distances'], results['ids'], results['metadata']
+        )):
+            response_text += (
+                f"<document rank='{i+1}' "
+                f"docid='{metadata.get('docid', 'N/A')}' "
+                f"title='{metadata.get('title', 'N/A')}' "
+                f"date='{metadata.get('created', 'N/A')}' "
+                f"link='{metadata.get('link', 'N/A')}'>\n"
+                f"<chunk>{doc_text}</chunk>\n"
+                f"</document>\n"
+            )
+        
+        response_text += "</search_results>"
+        return [types.TextContent(type="text", text=response_text)]
 
     else:
         raise ValueError(f"Unknown tool: {name}")
@@ -198,6 +261,12 @@ async def list_resources() -> list[types.Resource]:
             name="Current experiment conditions",
             mimeType="text/plain"
         ),
+        types.Resource(
+            uri="file:///schema/metadata",
+            name="Document Metadata Schema",
+            description="Available metadata fields for filtering in vector_search and fulltext_search. Use this to understand what fields you can filter on.",
+            mimeType="application/json"
+        ),
     ]
 
 @server.read_resource()
@@ -213,6 +282,126 @@ async def read_resource(uri: types.AnyUrl) -> str:
                 "pwd": os.getcwd()
             }
         }
+    elif str(uri) == "file:///schema/metadata":
+        schema = {
+            "description": "Metadata fields available for filtering in ChromaDB searches",
+            "fields": {
+                # Document identification
+                "docid": {
+                    "type": "integer",
+                    "description": "Numeric document ID (e.g., 53181)",
+                    "example_filter": '{"docid": {"$gte": 50000}}'
+                },
+                "doc_id": {
+                    "type": "string", 
+                    "description": "Full document identifier (e.g., 'mu2e-docdb-53181')",
+                    "example_filter": '{"doc_id": {"$in": ["mu2e-docdb-53181", "mu2e-docdb-53182"]}}'
+                },
+                "docid_str": {
+                    "type": "string",
+                    "description": "Formatted document string (e.g., 'Mu2e-doc-53181-v2')"
+                },
+                "doc_type": {
+                    "type": "string",
+                    "description": "Document type, typically 'mu2e-docdb'",
+                    "example_filter": '{"doc_type": "mu2e-docdb"}'
+                },
+                
+                # Document content
+                "title": {
+                    "type": "string",
+                    "description": "Document title",
+                    "example_filter": '{"title": {"$contains": "timeline"}}'
+                },
+                "abstract": {
+                    "type": "string", 
+                    "description": "Document abstract/summary",
+                    "example_filter": '{"abstract": {"$contains": "detector"}}'
+                },
+                "topics": {
+                    "type": "string",
+                    "description": "Document topics/categories (comma-separated)"
+                },
+                
+                # File information
+                "filename": {
+                    "type": "string",
+                    "description": "Original filename",
+                    "example_filter": '{"filename": {"$contains": ".pdf"}}'
+                },
+                "type": {
+                    "type": "string",
+                    "description": "File type (pdf, ppt, etc.)",
+                    "example_filter": '{"type": "pdf"}'
+                },
+                "version": {
+                    "type": "integer",
+                    "description": "Document version number",
+                    "example_filter": '{"version": {"$gte": 2}}'
+                },
+                "link": {
+                    "type": "string",
+                    "description": "URL to download the document"
+                },
+                
+                # Dates and timestamps
+                "created": {
+                    "type": "string",
+                    "description": "Creation date in format '20 Jun 2025, 02:03'"
+                },
+                "created_timestamp": {
+                    "type": "integer",
+                    "description": "Unix timestamp for creation date - use this for date filtering",
+                    "example_filter": '{"created_timestamp": {"$gte": 1735689600}}'
+                },
+                "revised_content": {
+                    "type": "string", 
+                    "description": "Last revision date in format '20 Jun 2025, 02:04'"
+                },
+                "revised_timestamp": {
+                    "type": "integer",
+                    "description": "Unix timestamp for revision date - use this for date filtering"
+                },
+                "revised_meta": {
+                    "type": "string",
+                    "description": "Metadata revision date"
+                },
+                
+                # Chunking information (technical details)
+                "chunk_id": {
+                    "type": "integer",
+                    "description": "Chunk index within document (0-based)"
+                },
+                "total_chunks": {
+                    "type": "integer", 
+                    "description": "Total number of chunks in document"
+                },
+                "file_index": {
+                    "type": "integer",
+                    "description": "File index within document (for multi-file docs)"
+                },
+                "chunk_size": {
+                    "type": "integer",
+                    "description": "Size of text chunks in tokens"
+                },
+                "chunk_overlap": {
+                    "type": "integer",
+                    "description": "Overlap between chunks in tokens"
+                },
+                "chunking_strategy": {
+                    "type": "string",
+                    "description": "Strategy used for text chunking (default, semantic, etc.)"
+                }
+            },
+            "filter_examples": {
+                "recent_documents": '{"created_timestamp": {"$gte": 1735689600}}',
+                "pdf_files": '{"type": "pdf"}',
+                "high_docid": '{"docid": {"$gte": 50000}}',
+                "multiple_conditions": '{"$and": [{"type": "pdf"}, {"docid": {"$gte": 50000}}]}',
+                "title_contains": '{"title": {"$contains": "detector"}}'
+            }
+        }
+        return json.dumps(schema, indent=2)
     raise ValueError("Resource not found")
 
 async def run_server(server_name: str = "docdb", server_version: str = "0.1.0"):
@@ -234,7 +423,7 @@ async def run_server(server_name: str = "docdb", server_version: str = "0.1.0"):
 async def main_async(db_name: str = DEFAULT_DBNAME):
     """Async main entry point."""
     setup_server(db_name)
-    print("DEBUG: db_name", os.environ['MU2E_DOCDB_USERNAME'])
+    #print("DEBUG: db_name", os.environ['MU2E_DOCDB_USERNAME'])
     await run_server()
 
 def main():

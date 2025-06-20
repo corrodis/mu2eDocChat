@@ -3,7 +3,7 @@ name = "mu2e"
 version = "0.2.0"
 description = "mu2e docdb and LLM interface"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "beautifulsoup4",
     "httpx",

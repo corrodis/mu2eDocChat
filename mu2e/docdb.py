@@ -172,6 +172,7 @@ class docdb:
             except ValueError:
                 last_updated = date_str
             doc = {"id":doc_id,
+                   "doc_id":"mu2e-docdb-"+str(doc_id),
                    "tite":title,
                    "authors":authors,
                    "topics":topics,
