@@ -18,7 +18,9 @@ import tiktoken
 from tqdm import tqdm
 
 def getDefaultCollection():
-    client = chromadb.PersistentClient(path=get_chroma_path())
+    host = os.getenv('MU2E_CHROMA_HOST') or "localhost"
+    port = os.getenv('MU2E_CHROMA_PORT') or "8000"
+    client = chromadb.HttpClient(host=host, port=port)
     return client.get_or_create_collection(name=os.getenv('MU2E_CHROMA_COLLECTION_NAME') or "mu2e_default")
 
 

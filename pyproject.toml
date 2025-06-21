@@ -33,7 +33,7 @@ slack = [
     "pytz"
 ]
 mcp = [
-    "mcp[cli]"
+    "mcp[cli]>=2.0.0"
 ]
 
 
@@ -47,4 +47,4 @@ build-backend = "hatchling.build"
 mu2e-docdb = "mu2e.cli.docdb_cli:main"
 mu2e-chat = "mu2e.cli.chat_cli:main"
 mu2e-slack = "mu2e.cli.slack_cli:main"
-mu2e-mcp-server = "mu2e.mcp.docdb:main"
+mu2e-mcp-server = "mu2e.mcp.docdb.server_fastmcp:main"
