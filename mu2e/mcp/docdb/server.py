@@ -13,6 +13,20 @@ import os
 import threading
 import argparse
 
+# Import modular components
+from mu2e.mcp.docdb.tools import (
+    handle_list_tool,
+    handle_get_tool,
+    handle_search_tool,
+    handle_fulltext_search_tool,
+    handle_docdb_search_tool
+)
+from mu2e.mcp.docdb.resources import (
+    get_metadata_schema,
+    get_mu2e_overview,
+    get_experiment_conditions
+)
+
 # Initialize with default values
 DEFAULT_DBNAME = "Mu2e"
 dbname = DEFAULT_DBNAME
@@ -155,107 +169,15 @@ async def handle_call_tool(
         raise ValueError("Missing arguments")
   
     if name == "list":
-        days = arguments.get("days")
-        if not days:
-            raise ValueError("Missing parameter days")
-        document = db.list_latest(days)
-        class DateTimeEncoder(json.JSONEncoder):
-            def default(self, obj):
-                if isinstance(obj, datetime):
-                    return obj.isoformat()
-                return super().default(obj)
-        formated_text = json.dumps(document, indent=4, cls=DateTimeEncoder)
-        return [types.TextContent(type="text", text=formated_text)]
-
+        return await handle_list_tool(arguments, db)
     elif name == "get":
-        docid = arguments.get("docid")
-        # check if we have this docid already cached
-        doc = mu2e.tools.load("mu2e-docdb-"+str(docid), nodb=True)
-        if doc is None:
-            # get it straight from docdb
-            doc = db.get(docid)
-            if doc:
-                db.parse_files(doc)
-                threading.Thread(target=db.save, args=(doc,), daemon=True).start()
-        if doc:
-            doc_filtered = doc.copy()
-            doc_filtered['files'] = [{k: v for k, v in f.items() if k != "document"} for f in doc_filtered['files']]
-            formated_text = json.dumps(doc_filtered, indent=4)
-        else:
-            formated_text = f"Docdb {docid} doesn't seem to exist."
-        return [types.TextContent(type="text", text=formated_text)]
-
-    elif name == "docdb_search":
-        query = arguments.get("query")
-        before = datetime.strptime(arguments["before"], "%Y-%m-%d") if arguments.get("before") else None
-        after = datetime.strptime(arguments["after"], "%Y-%m-%d") if arguments.get("after") else None
-        document = db.search(query, before, after)
-        class DateTimeEncoder(json.JSONEncoder):
-            def default(self, obj):
-                if isinstance(obj, datetime):
-                    return obj.isoformat()
-                return super().default(obj)
-        formated_text = json.dumps(document, indent=4, cls=DateTimeEncoder)
-        return [types.TextContent(type="text", text=formated_text)]
-
+        return await handle_get_tool(arguments, db)
     elif name == "search":
-        query = arguments.get("query")
-        n_results = arguments.get("n_results", 5)
-        days = arguments.get("days")
-        filters = arguments.get("filters")
-        
-        # Perform search based on parameters
-        if days:
-            results = search.search_by_date(query, days_back=days, n_results=n_results, filters=filters, collection=collection)
-        else:
-            results = search.search(query, n_results=n_results, filters=filters, collection=collection)
-        
-        # Format results for LLM consumption
-        response_text = f"<search_results query='{query}' type='vector' count='{results['n_results']}'>\n"
-        
-        for i, (doc_text, distance, doc_id, metadata) in enumerate(zip(
-            results['documents'], results['distances'], results['ids'], results['metadata']
-        )):
-            response_text += (
-                f"<document rank='{i+1}' "
-                f"distance='{distance:.3f}' "
-                f"docid='{metadata.get('docid', 'N/A')}' "
-                f"title='{metadata.get('title', 'N/A')}' "
-                f"date='{metadata.get('created', 'N/A')}' "
-                f"link='{metadata.get('link', 'N/A')}'>\n"
-                f"<chunk>{doc_text}</chunk>\n"
-                f"</document>\n"
-            )
-        
-        response_text += "</search_results>"
-        return [types.TextContent(type="text", text=response_text)]
-    
+        return await handle_search_tool(arguments, collection)
     elif name == "fulltext_search":
-        query = arguments.get("query")
-        n_results = arguments.get("n_results", 5)
-        filters = arguments.get("filters")
-        
-        results = search.search_fulltext(query, n_results=n_results, filters=filters, collection=collection)
-        
-        # Format results for LLM consumption
-        response_text = f"<search_results query='{query}' type='fulltext' count='{results['n_results']}'>\n"
-        
-        for i, (doc_text, distance, doc_id, metadata) in enumerate(zip(
-            results['documents'], results['distances'], results['ids'], results['metadata']
-        )):
-            response_text += (
-                f"<document rank='{i+1}' "
-                f"docid='{metadata.get('docid', 'N/A')}' "
-                f"title='{metadata.get('title', 'N/A')}' "
-                f"date='{metadata.get('created', 'N/A')}' "
-                f"link='{metadata.get('link', 'N/A')}'>\n"
-                f"<chunk>{doc_text}</chunk>\n"
-                f"</document>\n"
-            )
-        
-        response_text += "</search_results>"
-        return [types.TextContent(type="text", text=response_text)]
-
+        return await handle_fulltext_search_tool(arguments, collection)
+    elif name == "docdb_search":
+        return await handle_docdb_search_tool(arguments, db)
     else:
         raise ValueError(f"Unknown tool: {name}")
 
@@ -286,135 +208,11 @@ async def list_resources() -> list[types.Resource]:
 async def read_resource(uri: types.AnyUrl) -> str:
     """Read a resource by URI."""
     if str(uri) == "file:///overview/mu2e":
-        return "Mu2e is an awesome experiment." + os.environ['MU2E_DOCDB_USERNAME']
+        return get_mu2e_overview()
     elif str(uri) == "file:///experiment/conditions":
-        return {
-            "experiment": {
-                "status": "construction",
-                "mood": "good",
-                "pwd": os.getcwd()
-            }
-        }
+        return get_experiment_conditions()
     elif str(uri) == "file:///schema/metadata":
-        schema = {
-            "description": "Metadata fields available for filtering in ChromaDB searches",
-            "fields": {
-                # Document identification
-                "docid": {
-                    "type": "integer",
-                    "description": "Numeric document ID (e.g., 53181)",
-                    "example_filter": '{"docid": {"$gte": 50000}}'
-                },
-                "doc_id": {
-                    "type": "string", 
-                    "description": "Full document identifier (e.g., 'mu2e-docdb-53181')",
-                    "example_filter": '{"doc_id": {"$in": ["mu2e-docdb-53181", "mu2e-docdb-53182"]}}'
-                },
-                "docid_str": {
-                    "type": "string",
-                    "description": "Formatted document string (e.g., 'Mu2e-doc-53181-v2')"
-                },
-                "doc_type": {
-                    "type": "string",
-                    "description": "Document type, typically 'mu2e-docdb'",
-                    "example_filter": '{"doc_type": "mu2e-docdb"}'
-                },
-                
-                # Document content
-                "title": {
-                    "type": "string",
-                    "description": "Document title",
-                    "example_filter": '{"title": {"$contains": "timeline"}}'
-                },
-                "abstract": {
-                    "type": "string", 
-                    "description": "Document abstract/summary",
-                    "example_filter": '{"abstract": {"$contains": "detector"}}'
-                },
-                "topics": {
-                    "type": "string",
-                    "description": "Document topics/categories (comma-separated)"
-                },
-                
-                # File information
-                "filename": {
-                    "type": "string",
-                    "description": "Original filename",
-                    "example_filter": '{"filename": {"$contains": ".pdf"}}'
-                },
-                "type": {
-                    "type": "string",
-                    "description": "File type (pdf, ppt, etc.)",
-                    "example_filter": '{"type": "pdf"}'
-                },
-                "version": {
-                    "type": "integer",
-                    "description": "Document version number",
-                    "example_filter": '{"version": {"$gte": 2}}'
-                },
-                "link": {
-                    "type": "string",
-                    "description": "URL to download the document"
-                },
-                
-                # Dates and timestamps
-                "created": {
-                    "type": "string",
-                    "description": "Creation date in format '20 Jun 2025, 02:03'"
-                },
-                "created_timestamp": {
-                    "type": "integer",
-                    "description": "Unix timestamp for creation date - use this for date filtering",
-                    "example_filter": '{"created_timestamp": {"$gte": 1735689600}}'
-                },
-                "revised_content": {
-                    "type": "string", 
-                    "description": "Last revision date in format '20 Jun 2025, 02:04'"
-                },
-                "revised_timestamp": {
-                    "type": "integer",
-                    "description": "Unix timestamp for revision date - use this for date filtering"
-                },
-                "revised_meta": {
-                    "type": "string",
-                    "description": "Metadata revision date"
-                },
-                
-                # Chunking information (technical details)
-                "chunk_id": {
-                    "type": "integer",
-                    "description": "Chunk index within document (0-based)"
-                },
-                "total_chunks": {
-                    "type": "integer", 
-                    "description": "Total number of chunks in document"
-                },
-                "file_index": {
-                    "type": "integer",
-                    "description": "File index within document (for multi-file docs)"
-                },
-                "chunk_size": {
-                    "type": "integer",
-                    "description": "Size of text chunks in tokens"
-                },
-                "chunk_overlap": {
-                    "type": "integer",
-                    "description": "Overlap between chunks in tokens"
-                },
-                "chunking_strategy": {
-                    "type": "string",
-                    "description": "Strategy used for text chunking (default, semantic, etc.)"
-                }
-            },
-            "filter_examples": {
-                "recent_documents": '{"created_timestamp": {"$gte": 1735689600}}',
-                "pdf_files": '{"type": "pdf"}',
-                "high_docid": '{"docid": {"$gte": 50000}}',
-                "multiple_conditions": '{"$and": [{"type": "pdf"}, {"docid": {"$gte": 50000}}]}',
-                "title_contains": '{"title": {"$contains": "detector"}}'
-            }
-        }
-        return json.dumps(schema, indent=2)
+        return get_metadata_schema()
     raise ValueError("Resource not found")
 
 async def run_server(server_name: str = "docdb", server_version: str = "0.1.0"):
