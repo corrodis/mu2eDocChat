@@ -19,12 +19,25 @@ dbname = DEFAULT_DBNAME
 
 server = Server("docdb")
 db = None  # Will be initialized in setup_server
+collection = None  # Will be initialized based on args
 
-def setup_server(db_name: str = DEFAULT_DBNAME):
+def setup_server(db_name: str = DEFAULT_DBNAME, use_argo: bool = False, use_argo_remote: bool = False):
     """Initialize the server with given configuration."""
-    global dbname, db
+    global dbname, db, collection
     dbname = db_name
-    db = mu2e.docdb(login=True)
+    
+    # Set up collection based on arguments
+    if use_argo_remote:
+        collection = anl.get_collection(url="http://localhost:55019/v1/embed")
+        print(f"Using Argo-Remote collection for {dbname}")
+    elif use_argo:
+        collection = anl.get_collection()
+        print(f"Using Argo collection for {dbname}")
+    else:
+        collection = None
+        print(f"Using default collection for {dbname}")
+    
+    db = mu2e.docdb(login=True, collection=collection)
     return server
 
 @server.list_tools()
@@ -193,9 +206,9 @@ async def handle_call_tool(
         
         # Perform search based on parameters
         if days:
-            results = search.search_by_date(query, days_back=days, n_results=n_results, filters=filters)
+            results = search.search_by_date(query, days_back=days, n_results=n_results, filters=filters, collection=collection)
         else:
-            results = search.search(query, n_results=n_results, filters=filters)
+            results = search.search(query, n_results=n_results, filters=filters, collection=collection)
         
         # Format results for LLM consumption
         response_text = f"<search_results query='{query}' type='vector' count='{results['n_results']}'>\n"
@@ -222,7 +235,7 @@ async def handle_call_tool(
         n_results = arguments.get("n_results", 5)
         filters = arguments.get("filters")
         
-        results = search.search_fulltext(query, n_results=n_results, filters=filters)
+        results = search.search_fulltext(query, n_results=n_results, filters=filters, collection=collection)
         
         # Format results for LLM consumption
         response_text = f"<search_results query='{query}' type='fulltext' count='{results['n_results']}'>\n"
@@ -420,9 +433,9 @@ async def run_server(server_name: str = "docdb", server_version: str = "0.1.0"):
             )
         )
 
-async def main_async(db_name: str = DEFAULT_DBNAME):
+async def main_async(db_name: str = DEFAULT_DBNAME, use_argo: bool = False, use_argo_remote: bool = False):
     """Async main entry point."""
-    setup_server(db_name)
+    setup_server(db_name, use_argo, use_argo_remote)
     #print("DEBUG: db_name", os.environ['MU2E_DOCDB_USERNAME'])
     await run_server()
 
@@ -431,8 +444,12 @@ def main():
     parser = argparse.ArgumentParser(description='Run the Mu2e DocDB MCP server')
     parser.add_argument('--dbname', default=DEFAULT_DBNAME,
                       help=f'DocDB database name (default: {DEFAULT_DBNAME})')
+    parser.add_argument('--argo', action='store_true',
+                      help='Use Argo embeddings')
+    parser.add_argument('--argo-remote', action='store_true',
+                      help='Use Argo remote embeddings via proxy')
     args = parser.parse_args()
-    asyncio.run(main_async(args.dbname))
+    asyncio.run(main_async(args.dbname, args.argo, args.argo_remote))
 
 if __name__ == "__main__":
     main()
