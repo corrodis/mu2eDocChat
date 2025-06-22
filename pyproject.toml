@@ -16,7 +16,8 @@ dependencies = [
     "openai>=1.0.0",
     "anthropic",
     "chromadb",
-    "tqdm"
+    "tqdm",
+    "aiohttp"
 ]
 
 [project.optional-dependencies]

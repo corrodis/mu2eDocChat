@@ -461,11 +461,15 @@ class docdb:
         # also generate the embedding
         #rag.doc_generate_embedding(docid)
         #print(f"Data saved to {full_path}")
+    
+    def get_and_parse(self, docid):
+        doc_full = self.get(docid)
+        self.parse_files(doc_full)
+        return doc_full
 
     def get_parse_store(self, docid, save_raw=False):
         from mu2e import tools
-        doc_full = self.get(docid)
-        self.parse_files(doc_full)
+        doc_full = self.get_and_parse(docid)
         tools.saveInCollection(doc_full, self.collection)
         if save_raw:
             self.saveMetaJson(doc_full)
@@ -480,7 +484,7 @@ class docdb:
                 continue
             doc_ = None
             if not force_reload:
-                doc_ = tools.load2("mu2e-docdb-"+str(doc['id']), nodb=True) # check if we already have this cached
+                doc_ = tools.load2("mu2e-docdb-"+str(doc['id']), nodb=True, collection=self.collection) # check if we already have this cached
                 if not doc_ is None:
                     print("mu2e-docdb-"+str(doc['id'])+" - present")
             if doc_ is None:

@@ -18,9 +18,7 @@ import tiktoken
 from tqdm import tqdm
 
 def getDefaultCollection():
-    host = os.getenv('MU2E_CHROMA_HOST') or "localhost"
-    port = os.getenv('MU2E_CHROMA_PORT') or "8000"
-    client = chromadb.HttpClient(host=host, port=port)
+    client = chromadb.PersistentClient(path=get_chroma_path())
     return client.get_or_create_collection(name=os.getenv('MU2E_CHROMA_COLLECTION_NAME') or "mu2e_default")
 
 
@@ -308,7 +306,7 @@ def _get_summary_claude(doc, model):
     return doc
 
 
-def generate_from_local(collection=None, chunking_strategy="default", base_path=None):
+def generate_from_local(collection=None, chunking_strategy="default", base_path=None, force_reload=False):
     """
     Generate embeddings from all locally stored documents (meta.json files) into a ChromaDB collection.
     This is useful for regenerating collections with different settings without re-downloading.
@@ -316,7 +314,7 @@ def generate_from_local(collection=None, chunking_strategy="default", base_path=
     Args:
         collection: ChromaDB collection (uses default if None)
         base_path: Base path for documents (defaults to ~/.mu2e/data)
-        
+        force_reload: If True, reload all documents even if they already exist in the collection
     Returns:
         int: Number of documents successfully processed
     """
@@ -348,9 +346,13 @@ def generate_from_local(collection=None, chunking_strategy="default", base_path=
             # Load the document metadata
             with open(meta_file, 'r') as f:
                 doc = json.load(f)
-            
-            # Save to collection with specified settings
-            saveInCollection(doc, collection=collection, chunking_strategy=chunking_strategy)
+
+            doc_ = load2(doc['doc_id'], nodb=True, collection=collection) # check if we already have this cached
+            if not doc_ is None:
+                print(doc['doc_id']+" - present")
+            else:
+                print(doc['doc_id']+" - processing")
+                saveInCollection(doc, collection=collection, chunking_strategy=chunking_strategy)
             processed_count += 1
             
         except Exception as e:
