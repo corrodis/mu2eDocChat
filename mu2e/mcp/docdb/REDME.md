@@ -19,7 +19,7 @@ Model Context Protocol (MCP) server for Mu2e document database integration.
 
 The server can be used with VS Code Copilot via HTTP transport. See the [official documentation](https://code.visualstudio.com/docs/copilot/chat/mcp-servers) for setup instructions.
 
-### HTTP Transport (Recommended)
+### HTTP Transport (if you run the server independently)
 Add this configuration to your VS Code settings:
 
 ```json
@@ -54,7 +54,7 @@ You can also use the stdio transport with command-line configuration:
 }
 ```
 
-## Setup for Desktop
+## Setup for Claude Desktop
 
 Add to your MCP settings:
 
