@@ -26,27 +26,38 @@ class MCPClient:
     def __init__(self) -> None:
         self._connected = False
         self.mcp_session = None
+        self._url = None
 
     @classmethod 
     async def create(cls, url): # use async factory
         server = cls()
-        transport = streamablehttp_client(url=url, timeout=5)
-        server._exit_stack = AsyncExitStack()
-        read_stream, write_stream, _ = await server._exit_stack.enter_async_context(transport)
-        session_context = ClientSession(read_stream, write_stream)
-        server.mcp_session = await server._exit_stack.enter_async_context(session_context)
-        await server.mcp_session.initialize()
-        server._connected = True
-        print(f"Connected to MCP server at {url}")
-        return server
+        server._url = url
+        try:
+            transport = streamablehttp_client(url=url, timeout=5)
+            server._exit_stack = AsyncExitStack()
+            read_stream, write_stream, _ = await server._exit_stack.enter_async_context(transport)
+            session_context = ClientSession(read_stream, write_stream)
+            server.mcp_session = await server._exit_stack.enter_async_context(session_context)
+            await server.mcp_session.initialize()
+            server._connected = True
+            print(f"Connected to MCP server at {url}")
+            return server
+        except Exception as e:
+            print(f"Failed to connect to MCP server at {url}: {e}")
+            server._connected = False
+            return server
 
     async def close(self):
         """Close the connection to the MCP server."""
-        if self._exit_stack is not None:
-            await self._exit_stack.aclose()
-            self._exit_stack = None
-            self._connected = False
-            self.mcp_session = None
+        if hasattr(self, '_exit_stack') and self._exit_stack is not None:
+            try:
+                await self._exit_stack.aclose()
+            except Exception as e:
+                print(f"Warning: Error closing MCP connection: {e}")
+            finally:
+                self._exit_stack = None
+                self._connected = False
+                self.mcp_session = None
 
     # support for 'async with'
     async def __aenter__(self):
@@ -129,8 +140,12 @@ Always cite documents with their IDs and links using this format:
 
     async def cleanup(self):
         if self.mcp is not None:
-            await self.mcp.close()
-        self.mcp = None
+            try:
+                await self.mcp.close()
+            except Exception as e:
+                print(f"Warning: Error during MCP cleanup: {e}")
+            finally:
+                self.mcp = None
 
     async def createMcp(self):
         self.mcp = await MCPClient.create(self.mcp_server_url)
