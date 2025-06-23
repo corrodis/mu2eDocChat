@@ -24,6 +24,11 @@ async def run_bot(args):
             else:
                 print("Mu2e Slack bot started (responds to mentions and DMs)")
         
+        # Configure tool notifications
+        if args.no_tool_notifications:
+            s.show_tool_notifications = False
+            print("Tool notifications disabled")
+        
         # Start monitoring (this runs in the background)
         s.monitor()
         
@@ -53,6 +58,8 @@ def main():
                       help='Slack channel name (optional - will respond to DMs and mentions)')
     parser.add_argument('--dm-only', action='store_true',
                       help='Only respond to direct messages')
+    parser.add_argument('--no-tool-notifications', action='store_true',
+                      help='Disable tool usage notifications in Slack')
     args = parser.parse_args()
 
     if not os.getenv('MU2E_SLACK_BOT_TOKEN'):

@@ -138,6 +138,14 @@ Always cite documents with their IDs and links using this format:
         if self.mcp is None:
             await self.createMcp()
 
+    def set_tool_use_callback(self, callback):
+        """Set a callback function to be called when tools are used.
+        
+        Args:
+            callback: Async function that takes (tool_name, arguments) as parameters
+        """
+        self._tool_use_callback = callback
+
     async def cleanup(self):
         if self.mcp is not None:
             try:
@@ -263,6 +271,11 @@ Always cite documents with their IDs and links using this format:
                     
                     # Call MCP tool
                     print(f"USING TOOL: {tool_name} with {arguments}")
+                    
+                    # Notify about tool usage if callback is provided
+                    if hasattr(self, '_tool_use_callback') and self._tool_use_callback:
+                        await self._tool_use_callback(tool_name, arguments)
+                    
                     try:
                         tool_result = await self.mcp.call_tool(tool_name, arguments)
                         content = tool_result.content[0].text if tool_result.content else "No content"

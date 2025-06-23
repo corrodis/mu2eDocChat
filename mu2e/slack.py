@@ -48,6 +48,7 @@ class slack:
         self.processor = Chat
         self.bot_user_id = None  # Will be set when we connect
         self._shutdown_requested = False
+        self.show_tool_notifications = True  # Can be disabled
 
     def __del__(self):
         #print("DEBUG DEL")
@@ -232,12 +233,48 @@ class slack:
         except SlackApiError as e:
             print(f"Error fetching messages: {e}")
 
+    async def _tool_use_notification(self, tool_name: str, arguments: dict, channel: str, thread_ts: str):
+        """Send a notification about tool usage"""
+        if not self.show_tool_notifications:
+            return
+            
+        tool_descriptions = {
+            "search": "🔍 Searching for documents using semantic similarity",
+            "fulltext_search": "📄 Searching document text for specific keywords", 
+            "get": "📖 Retrieving specific document",
+            "list": "📋 Listing recent documents",
+            "docdb_search": "🗃️ Searching DocDB metadata"
+        }
+        
+        description = tool_descriptions.get(tool_name, f"🔧 Using tool: {tool_name}")
+        
+        # Add search query info if available
+        if "query" in arguments:
+            query = arguments["query"]
+            if len(query) > 50:
+                query = query[:47] + "..."
+            description += f" for '{query}'"
+        elif "docid" in arguments:
+            description += f" (ID: {arguments['docid']})"
+        
+        # Send notification in thread
+        thread_ts_for_notification = thread_ts if not self._is_direct_message(channel) else None
+        self.send(description, thread_ts=thread_ts_for_notification, channel=channel)
+
     async def process_async(self, message, ts):
         """Process a message asynchronously using the MCP chat"""
         try:
             # Create chat instance for this thread if it doesn't exist
             if "chat" not in self.threads[ts]:
-                self.threads[ts]["chat"] = self.processor()
+                chat_instance = self.processor()
+                
+                # Set up tool use callback for this chat instance
+                channel = self.threads[ts]["channel"]
+                async def tool_callback(tool_name, arguments):
+                    await self._tool_use_notification(tool_name, arguments, channel, ts)
+                
+                chat_instance.set_tool_use_callback(tool_callback)
+                self.threads[ts]["chat"] = chat_instance
             
             user = message["user"]
             text = message["text"]
