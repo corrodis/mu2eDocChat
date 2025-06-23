@@ -42,8 +42,16 @@ async def health_check():
 
 async def chat_main(args):
     """Main chat function."""
-    # Create chat instance
-    chat = Chat()
+    # Get user context for CLI
+    import getpass
+    import os
+    
+    user_context = {
+        "user_name": os.getenv('USER') or getpass.getuser()
+    }
+    
+    # Create chat instance with user context
+    chat = Chat(user_context=user_context)
     shutdown_requested = False
 
     def signal_handler(signum, frame):
@@ -63,7 +71,7 @@ async def chat_main(args):
         sys.exit(1)
     try:
         if args.query:
-            # One-off question mode
+            # One-off question mode  
             response = await chat.chat(args.query)
             print(response)
         else:
