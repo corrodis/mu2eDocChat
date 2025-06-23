@@ -1,3 +1,10 @@
+import sqlite3
+from packaging import version
+if version.parse(sqlite3.sqlite_version) < version.parse("3.35.0"):
+    # hack from https://gist.github.com/defulmere/8b9695e415a44271061cc8e272f3c300
+    __import__('pysqlite3')
+    import sys
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import chromadb
 from chromadb.api.types import EmbeddingFunction, Documents
 import requests

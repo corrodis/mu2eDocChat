@@ -17,7 +17,10 @@ dependencies = [
     "anthropic",
     "chromadb",
     "tqdm",
-    "aiohttp"
+    "aiohttp",
+    "mcp[cli]",
+    "slack_sdk",
+    "pytz"
 ]
 
 [project.optional-dependencies]
