@@ -10,7 +10,7 @@ import logging
 import subprocess
 import sys
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from mcp import ClientSession
@@ -88,7 +88,8 @@ class Chat:
         max_tokens: int = 2000,
         mcp_server_url: str = None,
         mcp_timeout_seconds: int = 10,
-        api_key: str = None
+        api_key: str = None,
+        user_context: dict = None
     ):
         # Load from environment with defaults (chat-specific variables)
         load_dotenv()
@@ -109,12 +110,24 @@ class Chat:
         # Conversation history
         self.messages: List[Dict[str, Any]] = []
         
+        # Context information
+        self.context_info = user_context.copy() if user_context else {}
+        
+        # Chat logging
+        self.enable_logging = os.getenv('MU2E_CHAT_ENABLE_LOGGING', 'true').lower() == 'true'
+        self.log_dir = os.getenv('MU2E_CHAT_LOG_DIR', './mu2e/chat_logs/')
+        self.conversation_start_time = datetime.now()
+        self.conversation_id = f"chat_{self.conversation_start_time.strftime('%Y%m%d_%H%M%S')}_{id(self)}"
+        
+        # Create log directory if it doesn't exist
+        if self.enable_logging:
+            os.makedirs(self.log_dir, exist_ok=True)
         
         #self.mcp_session: Optional[ClientSession] = None
         self.available_tools: List[Dict[str, Any]] = []
         
-        # System prompt
-        self.system_prompt =\
+        # Base system prompt (will be enhanced with context)
+        self.base_system_prompt =\
         """You are a helpful AI assistant for the Mu2e experiment with access to document search tools.
 
 Use these tools proactively to find information that will help answer user questions. 
@@ -146,7 +159,57 @@ Always cite documents with their IDs and links using this format:
         """
         self._tool_use_callback = callback
 
+    def _build_system_prompt(self, additional_context=None) -> str:
+        """Build system prompt with current date/time and user context."""
+        prompt = self.base_system_prompt
+        
+        # Add current date/time
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S %Z")
+        prompt += f"\n\nCurrent date and time: {current_time}"
+        
+        # Merge stored context with any additional context
+        context = self.context_info.copy()
+        if additional_context:
+            context.update(additional_context)
+        
+        # Add context information
+        if context.get('user_name'):
+            prompt += f"\nUser: {context['user_name']}"
+        if context.get('slack_channel_url'):
+            prompt += f"\nSlack channel: {context['slack_channel_url']}"
+                
+        return prompt
+
+    def _save_conversation_log(self):
+        """Save conversation to JSON file"""
+        if not self.enable_logging or not self.messages:
+            return
+            
+        try:
+            log_data = {
+                "conversation_id": self.conversation_id,
+                "start_time": self.conversation_start_time.isoformat(),
+                "end_time": datetime.now().isoformat(),
+                "context_info": self.context_info,
+                "system_message": self._build_system_prompt(),
+                "messages": self.messages,
+                "model": self.model,
+                "base_url": self.base_url
+            }
+            
+            log_file_path = os.path.join(self.log_dir, f"{self.conversation_id}.json")
+            with open(log_file_path, 'w') as f:
+                json.dump(log_data, f, indent=2)
+                
+            print(f"Conversation logged to: {log_file_path}")
+            
+        except Exception as e:
+            print(f"Warning: Failed to save conversation log: {e}")
+
     async def cleanup(self):
+        # Save conversation log before cleanup
+        self._save_conversation_log()
+        
         if self.mcp is not None:
             try:
                 await self.mcp.close()
@@ -208,7 +271,7 @@ Always cite documents with their IDs and links using this format:
         
         return status
         
-    async def chat(self, user_message: str) -> str:
+    async def chat(self, user_message: str, user_context=None) -> str:
         """
         Send a message and get a response with automatic tool handling.
         
@@ -223,9 +286,10 @@ Always cite documents with their IDs and links using this format:
 
         await self._checkMCP()
         
-        # Prepare messages with system prompt
+        # Prepare messages with dynamic system prompt
+        system_prompt = self._build_system_prompt(user_context)
         full_messages = [
-            {"role": "system", "content": self.system_prompt}
+            {"role": "system", "content": system_prompt}
         ] + self.messages
         
         try:
@@ -292,7 +356,7 @@ Always cite documents with their IDs and links using this format:
                 # Get final response after tool execution
                 final_response = self.client.chat.completions.create(
                     model=self.model,
-                    messages=[{"role": "system", "content": self.system_prompt}] + self.messages,
+                    messages=[{"role": "system", "content": system_prompt}] + self.messages,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens
                 )
