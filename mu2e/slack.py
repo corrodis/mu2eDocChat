@@ -286,14 +286,14 @@ class slack:
                     try:
                         channel_info = self.client.conversations_info(channel=channel)["channel"]
                         channel_name = channel_info.get("name", "unknown")
+                        user_context["slack_channel_name"] = channel_name
                         # Slack channel URL format
-                        workspace_info = self.client.team_info()["team"]
-                        workspace_domain = workspace_info.get("domain", "unknown")
-                        user_context["slack_channel_url"] = f"https://{workspace_domain}.slack.com/channels/{channel_name}"
-                        
+                        workspace_domain = self.client.auth_test()
+                        user_context["slack_workspace_name"] = workspace_domain["name"]
+                        user_context["slack_message_ts"] = ts
                         # Add message URL
                         ts_for_url = ts.replace(".", "")
-                        user_context["slack_message_url"] = f"https://{workspace_domain}.slack.com/archives/{channel}/p{ts_for_url}"
+                        user_context["slack_message_url"] = f"{workspace_domain['url']}archives/{channel}/p{ts_for_url}"
                     except Exception:
                         pass  # Skip if we can't get channel info
                 

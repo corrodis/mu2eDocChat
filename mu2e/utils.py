@@ -3,6 +3,12 @@ import os
 from datetime import datetime
 from typing import Union, Optional
 
+def get_lof_dir():
+    log_dir = os.getenv('MU2E_LOG_DIR')
+    if log_dir:
+        return Path(log_dir)
+    return Path.home() / '.mu2e' / 'logs'
+
 def get_data_dir():
     """Get the data directory for docdb storage, creating it if necessary."""
     # First priroty is the environment variable

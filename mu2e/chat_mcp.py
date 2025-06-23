@@ -18,6 +18,7 @@ from mcp.client.streamable_http import streamablehttp_client
 from contextlib import AsyncExitStack
 import aiohttp
 from dotenv import load_dotenv
+from .utils import get_lof_dir
 
 # Load environment variables
 load_dotenv()
@@ -114,13 +115,13 @@ class Chat:
         self.context_info = user_context.copy() if user_context else {}
         
         # Chat logging
-        self.enable_logging = os.getenv('MU2E_CHAT_ENABLE_LOGGING', 'true').lower() == 'true'
-        self.log_dir = os.getenv('MU2E_CHAT_LOG_DIR', './mu2e/chat_logs/')
+        self.logging_level = os.getenv('MU2E_CHAT_ENABLE_LOGGING', 2) # 0=off, 1=at the end, 2=after each interaction
+        self.log_dir = get_lof_dir()
         self.conversation_start_time = datetime.now()
         self.conversation_id = f"chat_{self.conversation_start_time.strftime('%Y%m%d_%H%M%S')}_{id(self)}"
         
         # Create log directory if it doesn't exist
-        if self.enable_logging:
+        if self.logging_level > 0:
             os.makedirs(self.log_dir, exist_ok=True)
         
         #self.mcp_session: Optional[ClientSession] = None
@@ -182,7 +183,7 @@ Always cite documents with their IDs and links using this format:
 
     def _save_conversation_log(self):
         """Save conversation to JSON file"""
-        if not self.enable_logging or not self.messages:
+        if self.logging_level == 0 or not self.messages:
             return
             
         try:
@@ -364,12 +365,17 @@ Always cite documents with their IDs and links using this format:
                 final_content = final_response.choices[0].message.content or ""
                 self.messages.append({"role": "assistant", "content": final_content})
                 
+                if self.logging_level >= 3:
+                    self._save_conversation_log()
                 return final_content
                 
             else:
                 # No tool calls, regular response
                 content = message.content or ""
                 self.messages.append({"role": "assistant", "content": content})
+                
+                if self.logging_level >= 2:
+                    self._save_conversation_log()
                 return content
                 
         except Exception as e:
