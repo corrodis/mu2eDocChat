@@ -1,2 +1,5 @@
 config.json
 .venv
+.env
+uv.lock
+.python-version

@@ -1,13 +1,16 @@
 import mu2e
+from mu2e.chat_mcp import Chat
 from slack_sdk import WebClient
 from slack_sdk.socket_mode import SocketModeClient
 from slack_sdk.socket_mode.response import SocketModeResponse
 from slack_sdk.socket_mode.request import SocketModeRequest
 from slack_sdk.errors import SlackApiError
 import time
+import asyncio
 from datetime import datetime
 import pytz
 import os
+import re
 
 class slack:
     """
@@ -17,10 +20,10 @@ class slack:
         channel_id (str): channel id used to send and fetch messages
         latest_ts (timestamp): last time checked for new messages
     """
-    def __init__(self, channel_name):
+    def __init__(self, channel_name=None):
         """
         Args:
-            channel_name(str): name of the channel to be used
+            channel_name(str): name of the channel to be used, or None for DMs only
         """
         self.bot_token = os.getenv('MU2E_SLACK_BOT_TOKEN')
         self.app_token = os.getenv('MU2E_SLACK_APP_TOKEN')
@@ -32,12 +35,20 @@ class slack:
 
         self.client = WebClient(self.bot_token)
         self.socket = SocketModeClient(app_token=self.app_token)
-        self.channel_id = self._find_channel_id(channel_name)
-        if not self.channel_id:
-            raise ValueError(f"Could not find channel: {channel_name}")
+        
+        if channel_name:
+            self.channel_id = self._find_channel_id(channel_name)
+            if not self.channel_id:
+                raise ValueError(f"Could not find channel: {channel_name}")
+        else:
+            self.channel_id = None  # Support DMs
+            
         self.latest_ts = time.time()
         self.threads = {} # store active threads
-        self.processor = p
+        self.processor = Chat
+        self.bot_user_id = None  # Will be set when we connect
+        self._shutdown_requested = False
+        self.show_tool_notifications = True  # Can be disabled
 
     def __del__(self):
         #print("DEBUG DEL")
@@ -59,43 +70,122 @@ class slack:
             print(f"Error: {e}")
         return None
 
-    def send(self, message,thread_ts=None):
+    def _get_bot_user_id(self):
+        """Get the bot's user ID"""
+        try:
+            response = self.client.auth_test()
+            return response["user_id"]
+        except SlackApiError as e:
+            print(f"Error getting bot user ID: {e}")
+            return None
+
+    def _is_mention(self, text, user_id):
+        """Check if the bot is mentioned in the text"""
+        return f'<@{user_id}>' in text
+
+    def _is_direct_message(self, channel):
+        """Check if this is a direct message (channel starts with 'D')"""
+        return channel.startswith('D')
+
+    def _clean_mention(self, text, user_id):
+        """Remove bot mention from text"""
+        mention_pattern = f'<@{user_id}>'
+        return re.sub(mention_pattern, '', text).strip()
+
+    def _schedule_async_task(self, coro):
+        """Schedule an async task in the main event loop"""
+        if hasattr(self, '_main_loop') and self._main_loop:
+            # Use the main event loop we stored
+            asyncio.run_coroutine_threadsafe(coro, self._main_loop)
+        else:
+            # Fallback - this should not happen if properly initialized
+            print("Warning: No main event loop available, task may not persist")
+            import threading
+            def run_async():
+                asyncio.run(coro)
+            thread = threading.Thread(target=run_async)
+            thread.daemon = True
+            thread.start()
+
+    def send(self, message, thread_ts=None, channel=None):
+        target_channel = channel or self.channel_id
         result = self.client.chat_postMessage(
-            channel=self.channel_id,
+            channel=target_channel,
             thread_ts=thread_ts,
             text=message
         )
         return result.status_code == 200
 
     def monitor(self):
-        #print("monitor")
+        # Store the main event loop for async task scheduling
+        try:
+            self._main_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._main_loop = None
+            print("Warning: No event loop running when starting monitor")
+            
+        # Get bot user ID for mention detection
+        if not self.bot_user_id:
+            self.bot_user_id = self._get_bot_user_id()
+            
         def process_event(client: SocketModeClient, req: SocketModeRequest):
-            #print("process_event")
             if req.type == "events_api":
-                response = SocketModeResponse(envelope_id=req.envelope_id) # Acknowledge the request
+                response = SocketModeResponse(envelope_id=req.envelope_id)
                 client.send_socket_mode_response(response)
 
                 event = req.payload["event"]
-                #print(event['text'], "bot_id" in event)
-                if "bot_id" not in event and event["type"] == "message":
-                    if 'subtype' in event:
-                        if event['subtype'] == "channel_join":
-                            return
-                            
-                    # filter channels
-                    #print(self.channel_id, event.get("channel"), self.channel_id == event.get("channel"))
-                    if self.channel_id == event.get("channel") or (self.channel_id is None):
-                        # new thread or part of a thread?
-                        #print("DEBUG: ", event)
-                        if "thread_ts" not in event: # new thread
-                            print("NEW")
-                            ts_ = event["ts"]
-                            self.threads[ts_] = {'ts':datetime.now().timestamp()}
-                            self.process(event, ts_)
-                            self.latest_ts = ts_
-                        else: 
-                            thread_ts = event.get("thread_ts")
-                            self.process(event, thread_ts)
+                
+                # Skip bot messages and certain subtypes
+                if "bot_id" in event or event["type"] != "message":
+                    return
+                    
+                if 'subtype' in event and event['subtype'] == "channel_join":
+                    return
+
+                channel = event.get("channel")
+                text = event.get("text", "")
+                
+                # Determine if we should respond
+                should_respond = False
+                
+                if self._is_direct_message(channel):
+                    # Always respond to DMs
+                    should_respond = True
+                elif "thread_ts" in event and event["thread_ts"] in self.threads:
+                    # Always respond in threads we're participating in
+                    should_respond = True
+                    # Clean mention if present but don't require it
+                    if self.bot_user_id and self._is_mention(text, self.bot_user_id):
+                        text = self._clean_mention(text, self.bot_user_id)
+                        event["text"] = text
+                elif self.channel_id and channel == self.channel_id:
+                    # In configured channel, respond to mentions
+                    if self.bot_user_id and self._is_mention(text, self.bot_user_id):
+                        should_respond = True
+                        # Clean the mention from text
+                        text = self._clean_mention(text, self.bot_user_id)
+                        event["text"] = text
+                elif self.channel_id is None:
+                    # No specific channel configured, respond to mentions in any channel
+                    if self.bot_user_id and self._is_mention(text, self.bot_user_id):
+                        should_respond = True
+                        text = self._clean_mention(text, self.bot_user_id)
+                        event["text"] = text
+
+                if should_respond:
+                    if "thread_ts" not in event:  # new thread
+                        ts_ = event["ts"]
+                        self.threads[ts_] = {
+                            'ts': datetime.now().timestamp(),
+                            'channel': channel
+                        }
+                        # Schedule the async task
+                        self._schedule_async_task(self.process_async(event, ts_))
+                        self.latest_ts = ts_
+                    else: 
+                        thread_ts = event.get("thread_ts")
+                        if thread_ts in self.threads:
+                            self._schedule_async_task(self.process_async(event, thread_ts))
                             self.threads[thread_ts]['ts'] = datetime.now().timestamp()
         
         self.socket.socket_mode_request_listeners.append(process_event)
@@ -143,34 +233,107 @@ class slack:
         except SlackApiError as e:
             print(f"Error fetching messages: {e}")
 
-    def process(self, message, ts):
-        print("DEBUG000", message)
-        print(ts in self.threads)
-        if "chat" not in self.threads[ts]:
-            print("DEBUG01")
-            self.threads[ts]["chat"] = self.processor()
-        print("DEBUG1")
-        user = message["user"]
-        text = message["text"]
-        #ts = message["ts"]
-        typ = message["type"]
-        print("DEBUG12")
-        #user_info = self.client.users_info(user=user)["user"]
-        #tz = pytz.timezone(user_info["tz"])
-        #query = '<user name="'+user_info["name"]+'" local_time="'+datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %Z%z")+'">' + text
-        #query = "Just for background, my name is "+user_info["name"]+", local time is "+datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %Z%z")
-        query = text
-        print("DEBUG2", query)
-        answer = self.threads[ts]["chat"](query)
-        print("process answer", answer)
-        if answer:
-            self.send(answer,thread_ts=ts)
+    async def _tool_use_notification(self, tool_name: str, arguments: dict, channel: str, thread_ts: str):
+        """Send a notification about tool usage"""
+        if not self.show_tool_notifications:
+            return
+            
+        tool_descriptions = {
+            "search": "🔍 Searching for documents using semantic similarity",
+            "fulltext_search": "📄 Searching document text for specific keywords", 
+            "get": "📖 Retrieving specific document",
+            "list": "📋 Listing recent documents",
+            "docdb_search": "🗃️ Searching DocDB metadata"
+        }
+        
+        description = tool_descriptions.get(tool_name, f"🔧 Using tool: {tool_name}")
+        
+        # Add search query info if available
+        if "query" in arguments:
+            query = arguments["query"]
+            if len(query) > 50:
+                query = query[:47] + "..."
+            description += f" for '{query}'"
+        elif "docid" in arguments:
+            description += f" (ID: {arguments['docid']})"
+        
+        # Send notification in thread
+        thread_ts_for_notification = thread_ts if not self._is_direct_message(channel) else None
+        self.send(description, thread_ts=thread_ts_for_notification, channel=channel)
+
+    async def process_async(self, message, ts):
+        """Process a message asynchronously using the MCP chat"""
+        try:
+            # Create chat instance for this thread if it doesn't exist
+            if "chat" not in self.threads[ts]:
+                chat_instance = self.processor()
+                
+                # Set up tool use callback for this chat instance
+                channel = self.threads[ts]["channel"]
+                async def tool_callback(tool_name, arguments):
+                    await self._tool_use_notification(tool_name, arguments, channel, ts)
+                
+                chat_instance.set_tool_use_callback(tool_callback)
+                self.threads[ts]["chat"] = chat_instance
+            
+            user = message["user"]
+            text = message["text"]
+            channel = self.threads[ts]["channel"]
+            
+            print(f"Processing message in thread {ts}: {text}")
+            
+            # Get response from chat
+            answer = await self.threads[ts]["chat"].chat(text)
+            
+            if answer:
+                # Send response in thread (or directly for DMs)
+                thread_ts = ts if not self._is_direct_message(channel) else None
+                self.send(answer, thread_ts=thread_ts, channel=channel)
+                print(f"Sent response: {answer[:100]}...")
+            
+        except Exception as e:
+            error_msg = f"Sorry, I encountered an error: {str(e)}"
+            print(f"Error processing message: {e}")
+            channel = self.threads[ts]["channel"]
+            thread_ts = ts if not self._is_direct_message(channel) else None
+            self.send(error_msg, thread_ts=thread_ts, channel=channel)
             
 
-class p:
-    def __init__(self):
-        self.cnt = 0
-    def __call__(self, msg):
-        self.cnt = self.cnt + 1
-        print(f"{self.cnt}) {msg}")
-        return f"Processed message #{self.cnt}"
+    async def cleanup_threads(self):
+        """Clean up old inactive threads"""
+        current_time = datetime.now().timestamp()
+        inactive_threads = []
+        
+        for ts, thread_data in self.threads.items():
+            # Remove threads inactive for more than 1 hour
+            if current_time - thread_data['ts'] > 3600:
+                inactive_threads.append(ts)
+        
+        for ts in inactive_threads:
+            if "chat" in self.threads[ts]:
+                await self.threads[ts]["chat"].cleanup()
+            del self.threads[ts]
+            print(f"Cleaned up inactive thread: {ts}")
+
+    async def shutdown(self):
+        """Gracefully shutdown the bot and clean up all resources"""
+        print("Shutting down Slack bot...")
+        self._shutdown_requested = True
+        
+        # Clean up all active chat instances
+        for ts, thread_data in self.threads.items():
+            if "chat" in thread_data:
+                try:
+                    await thread_data["chat"].cleanup()
+                    print(f"Cleaned up chat for thread {ts}")
+                except Exception as e:
+                    print(f"Error cleaning up thread {ts}: {e}")
+        
+        # Disconnect from Slack
+        try:
+            self.socket.disconnect()
+            print("Disconnected from Slack")
+        except Exception as e:
+            print(f"Error disconnecting from Slack: {e}")
+        
+        print("Slack bot shutdown complete")

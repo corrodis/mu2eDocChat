@@ -1,91 +1,49 @@
 # Chat Interface
 
-For the chat interface, if openAI or Anthropic APIs are used (vs Argo), corresponding API keys need to be set in the environment:
-- ANTHROPIC_API_KEY
-- OPENAI_API_KEY
+The Mu2e chat interface provides an AI-powered conversational assistant with access to the document database through MCP (Model Context Protocol) tools.
 
-## Quick Start
-```python
-from mu2e.chat import chat
+## Environment Configuration
 
-# Initialize the chat with Anthropic's Claude (default)
-agent = chat(api="antropic")
+Configure the chat using environment variables (create a `.env` file in your project root):
 
-# Ask a simple question
-# this doesn't use any internal infos
-response = agent("What are the main subsystems of the Mu2e experiment?")
-print(response)
+```bash
+# Chat-specific configuration
+MU2E_CHAT_BASE_URL=http://localhost:55019/v1    # OpenAI API compatible endpoint
+MU2E_CHAT_MODEL=argo:gpt-4o                     # Model name 
+MU2E_CHAT_API_KEY=your-api-key-here             # API key
+MU2E_CHAT_MCP_URL=http://localhost:1223/mcp/    # MCP server URL
 
-
-# Use RAG to get information from documents
-response = agent("\\rag What is the latest status of the tracker?")
-print(response)
-
-# You can specify a different model
-response = agent("\\rag \\model=sonnet Tell me about the calorimeter design")
-print(response)
-
-# You can also directly reference a specific document
-response = agent("\\mu2e-docdb-51478 What does this document say about the CRV?")
-print(response)
+# Fallback (for compatibility)
+OPENAI_API_KEY=your-api-key-here
 ```
 
-## List of arguments
-```
-from mu2e.chat import InputParser
+## Health Check
 
-InputParser.list_commands(print_help=True)
+Before using the chat, check that all services are running:
 
->>> Available Commands for Mu2e Chat:
->>> ========================================
->>> 
->>> \model=<name>
->>>   Select LLM model to use
->>>   Examples: \model=sonnet, \model=haiku, \model=4o-mini
->>>   Available values:
->>>     Anthropic: sonnet, haiku, opus
->>>     OpenAI: 4o-mini, 4o, o1-mini, o1-preview
->>>     Argo: argo-4o, argo-o1
->>> 
->>> \rag
->>>   Enable RAG (Retrieval Augmented Generation)
->>>   Example: \rag What is the latest status of the tracker?
->>> 
->>> \mu2e-docdb-<number>
->>>   Reference specific DocDB document
->>>   Example: \mu2e-docdb-51478 What does this document say?
->>> 
->>> \temperature=<value>
->>>   Set temperature for LLM response (0.0-1.0)
->>>   Example: \temperature=0.7
->>> 
->>> \print-settings
->>>   Show current settings in response
->>> 
->>> ========================================
+```bash
+mu2e-chat --health
 ```
 
-## Chat with follow up questions
-```python
-from mu2e.chat import chat
+This will show you the status of:
+- OpenAI API endpoint (your LLM service)
+- MCP server (document search tools)
 
-# Initialize the chat
-agent = chat()
+If services are down, the command provides instructions on how to start them.
 
-# First question
-response = agent("What are the main subsystems of the Mu2e experiment?")
-print("First response:", response)
+## Command Line Usage
 
-# Follow-up question - no need to reference previous context
-response = agent("Tell me more about the tracker")
-print("Follow-up response:", response)
+### Interactive Mode
+Start a conversation that maintains context across questions:
 
-# Another follow-up
-response = agent("What material is used in its straws?")
-print("Second follow-up:", response)
-
-# You can still use RAG or specify documents in follow-ups
-response = agent("\\rag What's the latest status on its construction?")
-print("Follow-up with RAG:", response)
+```bash
+mu2e-chat
 ```
 
+Example session:
+```
+Mu2e docdb chat (Ctrl+C to exit)
+Ask questions about Mu2e documents, procedures, or analysis
+
+Chat: What are the latest documents about the tracker?
+USING TOOL: search with {'query': 'tracker', 'n_results': 5, 'days': 30}

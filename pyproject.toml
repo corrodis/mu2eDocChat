@@ -3,7 +3,7 @@ name = "mu2e"
 version = "0.2.0"
 description = "mu2e docdb and LLM interface"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "beautifulsoup4",
     "httpx",
@@ -15,7 +15,12 @@ dependencies = [
     "python-dotenv",
     "openai>=1.0.0",
     "anthropic",
-    "bm25s"
+    "chromadb",
+    "tqdm",
+    "aiohttp",
+    "mcp[cli]",
+    "slack_sdk",
+    "pytz"
 ]
 
 [project.optional-dependencies]
@@ -25,15 +30,14 @@ minimal = [
     "pdfplumber",
     "requests",
     "numpy",
-    "python-dotenv",
-    "bm25s"
+    "python-dotenv"
 ]
 slack = [
     "slack_sdk",
     "pytz"
 ]
 mcp = [
-    "mcp[cli]"
+    "mcp[cli]>=2.0.0"
 ]
 
 
@@ -47,4 +51,4 @@ build-backend = "hatchling.build"
 mu2e-docdb = "mu2e.cli.docdb_cli:main"
 mu2e-chat = "mu2e.cli.chat_cli:main"
 mu2e-slack = "mu2e.cli.slack_cli:main"
-mu2e-mcp-server = "mu2e.mcp.docdb:main"
+mu2e-mcp-server = "mu2e.mcp.docdb.server_fastmcp:main"

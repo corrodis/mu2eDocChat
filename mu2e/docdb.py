@@ -39,15 +39,16 @@ class docdb:
 	print(doc['topics'])       # List of topics
 	```
     """
-    def __init__(self, base_url : str = None, cookie : str = None, login : bool = True):
+    def __init__(self, base_url : str = None, login : bool = True, collection = None):
         """
         Args:
-            cookie (str): The cookie value (of mellon-sso_mu2e-docdb.fnal.gov) needed for authentifiaction. Get it from login through the browser.
             base_url (str, optional): The base URL of the docdb server. Defaults to https://mu2e-docdb.fnal.gov/cgi-bin/sso/.
+            collection (chromadb Collection, optinal): Collection that is used
         """
-        self.cookies = {"mellon-sso_mu2e-docdb.fnal.gov": cookie}
+        self.cookies = None #{"mellon-sso_mu2e-docdb.fnal.gov": cookie}
         self.base_url = base_url if base_url else "https://mu2e-docdb.fnal.gov/cgi-bin/sso/"
         self.session = None
+        self.collection = collection # chromadb
         if login:
             missing = []
             if not os.getenv('MU2E_DOCDB_USERNAME'):
@@ -171,6 +172,7 @@ class docdb:
             except ValueError:
                 last_updated = date_str
             doc = {"id":doc_id,
+                   "doc_id":"mu2e-docdb-"+str(doc_id),
                    "tite":title,
                    "authors":authors,
                    "topics":topics,
@@ -411,13 +413,26 @@ class docdb:
         for i, file in enumerate(doc['files']):
             if file['type'] == "pdf":
                 p = parser.pdf(file['document'])
-                p.get_sldies_text()
-                text_out = p.add_image_descriptions()
+                text_out,_ = p.get_sldies_text()
+                if add_image_descriptions:
+                    text_out = p.add_image_descriptions()
                 doc['files'][i]['text'] = text_out
         return doc
+  
+    def saveFiles(self, doc):
+        import os
+        path = get_data_dir()
+        docid = f"mu2e-docdb-{doc['docid']}"
+        dir_path = path / docid
+        os.makedirs(dir_path, exist_ok=True)
+        if 'files' in doc:
+            for f in doc['files']:
+                with open(dir_path / f['filename'], 'wb') as f_:
+                    f_.write(f['document'].getvalue())
+
     
-    def save(self, doc, path=None):
-        from mu2e import rag
+    def saveMetaJson(self, doc, path=None):
+        #from mu2e import rag
         """
         Utility to save a docdb to disk.
 
@@ -444,27 +459,35 @@ class docdb:
         with open(full_path, 'w') as f:
                 f.write(json_string)
         # also generate the embedding
-        rag.doc_generate_embedding(docid)
-        print(f"Data saved to {full_path}")
+        #rag.doc_generate_embedding(docid)
+        #print(f"Data saved to {full_path}")
+    
+    def get_and_parse(self, docid):
+        doc_full = self.get(docid)
+        self.parse_files(doc_full)
+        return doc_full
 
-    def generate(self, days=30, force_reload=False):
+    def get_parse_store(self, docid, save_raw=False):
+        from mu2e import tools
+        doc_full = self.get_and_parse(docid)
+        tools.saveInCollection(doc_full, self.collection)
+        if save_raw:
+            self.saveMetaJson(doc_full)
+            self.saveFiles(doc_full)
+        return doc_full
+
+    def generate(self, days=10, force_reload=False, save_raw=True):
         from mu2e import tools
         latest = self.list_latest(days)
         for doc in latest:
-            if doc['id'] in ['51208','44716','51194']:
+            if doc['id'] in []:
                 continue
             doc_ = None
             if not force_reload:
-            	doc_ = tools.load("mu2e-docdb-"+str(doc['id']), nodb=True) # check if we already have this cached
-            if doc_ is None: # if not
-                if True:
-                #try:
-                    doc_full = self.get(doc['id']) # download it and ...
-                    self.parse_files(doc_full)
-                    self.save(doc_full)            # generate emebding and save it 
-                #except Exception as e:
-                #    print(e)
-            #print(doc['id'], doc_ != None)
-            #print(doc['id'], doc_ != None)
+                doc_ = tools.load2("mu2e-docdb-"+str(doc['id']), nodb=True, collection=self.collection) # check if we already have this cached
+                if not doc_ is None:
+                    print("mu2e-docdb-"+str(doc['id'])+" - present")
+            if doc_ is None:
+                self.get_parse_store(doc['id'], save_raw=save_raw)
             
     
