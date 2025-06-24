@@ -19,6 +19,7 @@ from contextlib import AsyncExitStack
 import aiohttp
 from dotenv import load_dotenv
 from .utils import get_lof_dir
+from .tools import getOpenAIClient
 
 # Load environment variables
 load_dotenv()
@@ -41,11 +42,18 @@ class MCPClient:
             server.mcp_session = await server._exit_stack.enter_async_context(session_context)
             await server.mcp_session.initialize()
             server._connected = True
-            print(f"Connected to MCP server at {url}")
+            # Don't print connection messages during health checks to reduce noise
             return server
-        except Exception as e:
-            print(f"Failed to connect to MCP server at {url}: {e}")
+        except (Exception, asyncio.CancelledError) as e:
+            # Clean up properly on failure
+            if hasattr(server, '_exit_stack') and server._exit_stack is not None:
+                try:
+                    await server._exit_stack.aclose()
+                except:
+                    pass
+                server._exit_stack = None
             server._connected = False
+            server.mcp_session = None
             return server
 
     async def close(self):
@@ -97,12 +105,9 @@ class Chat:
         self.base_url = base_url or os.getenv('MU2E_CHAT_BASE_URL', 'http://localhost:55019/v1')
         self.model = model or os.getenv('MU2E_CHAT_MODEL', 'argo:gpt-4o')
         self.mcp_server_url = mcp_server_url or os.getenv('MU2E_CHAT_MCP_URL', 'http://localhost:1223/mcp/')
-        self.api_key = api_key or os.getenv('MU2E_CHAT_API_KEY', os.getenv('OPENAI_API_KEY', 'whatever+random'))
+        #self.api_key = api_key or os.getenv('MU2E_CHAT_API_KEY', os.getenv('OPENAI_API_KEY', 'whatever+random'))
         
-        self.client = OpenAI(
-            base_url=self.base_url,
-            api_key=self.api_key
-        )
+        self.client = getOpenAIClient() 
         self.mcp = None
         self.tools = []
         self.temperature = temperature
@@ -115,7 +120,7 @@ class Chat:
         self.context_info = user_context.copy() if user_context else {}
         
         # Chat logging
-        self.logging_level = os.getenv('MU2E_CHAT_ENABLE_LOGGING', 2) # 0=off, 1=at the end, 2=after each interaction
+        self.logging_level = int(os.getenv('MU2E_CHAT_ENABLE_LOGGING', 1)) # 0=off, 1=at the end, 2=after each interaction
         self.log_dir = get_lof_dir()
         self.conversation_start_time = datetime.now()
         self.conversation_id = f"chat_{self.conversation_start_time.strftime('%Y%m%d_%H%M%S')}_{id(self)}"
@@ -174,10 +179,7 @@ Always cite documents with their IDs and links using this format:
             context.update(additional_context)
         
         # Add context information
-        if context.get('user_name'):
-            prompt += f"\nUser: {context['user_name']}"
-        if context.get('slack_channel_url'):
-            prompt += f"\nSlack channel: {context['slack_channel_url']}"
+        prompt += "\n\n Context: " + json.dumps(context, indent=2)
                 
         return prompt
 
@@ -222,18 +224,19 @@ Always cite documents with their IDs and links using this format:
     async def createMcp(self):
         self.mcp = await MCPClient.create(self.mcp_server_url)
 
-        tool_list = await self.mcp.list_tools()
-        self.tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.inputSchema
+        if self.mcp._connected:
+            tool_list = await self.mcp.list_tools()
+            self.tools = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.inputSchema
+                    }
                 }
-            }
-            for tool in tool_list.tools
-        ]
+                for tool in tool_list.tools
+            ]
 
     async def health_check(self) -> Dict[str, Any]:
         """Check health of all services."""

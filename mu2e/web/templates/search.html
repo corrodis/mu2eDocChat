@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+
+{% block title %}DocDB Search - mu2eDocChat{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/document-styles.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Mu2e DocDB Search</h2>
+    
+
+    <div class="input-group">
+        <select id="collection">
+            <option value="argo">Default</option>
+            <option value="mu2e">Argo</option>
+        </select>
+        <select id="searchType">
+            <option value="search">Semantic Search</option>
+            <option value="fulltext">Full-text Search</option>
+            <option value="list">List Recent</option>
+        </select>
+        <input type="text" id="searchQuery" placeholder="Enter search query..." class="flex-1">
+        <button onclick="performSearch()" class="btn">Search</button>
+    </div>
+    <div class="input-group">
+        <input type="text" id="filter" placeholder="Filter" class="flex-1" value="">
+        <input type="number" id="n_results"  placeholder="n" value="10" style="width: 100px;">
+    </div>
+    
+    
+    <div id="loading" class="loading" style="display: none;">
+        Searching...
+    </div>
+    
+    <div id="error" class="error" style="display: none;"></div>
+    
+    <div id="results" class="search-results"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/document-utils.js') }}"></script>
+<script>
+let currentQuery = '';
+
+function performSearch() {
+    const searchType = document.getElementById('searchType').value;
+    const query = document.getElementById('searchQuery').value.trim();
+    const collection = document.getElementById('collection').value;
+    const n_results = parseInt(document.getElementById('n_results').value);
+    const filter = document.getElementById('filter').value;
+    
+    if (!query && searchType !== 'list') {
+        showError('Please enter a search query');
+        return;
+    }
+    
+    currentQuery = query;
+    
+    // Show loading
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('error').style.display = 'none';
+    document.getElementById('results').innerHTML = '';
+    
+    // Prepare request data
+    const requestData = {
+        type: searchType,
+        query: query,
+        collection: collection,
+        n_results: n_results,
+        filters: filter
+    };
+    
+    if (searchType === 'list') {
+        requestData.limit = 20;
+    }
+    
+    // Make API request
+    fetch('/api/search', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById('loading').style.display = 'none';
+        
+        if (data.error) {
+            showError(data.error);
+            return;
+        }
+        
+        displayResults(data, query);
+    })
+    .catch(error => {
+        document.getElementById('loading').style.display = 'none';
+        showError('Network error: ' + error.message);
+    });
+}
+
+function displayResults(data, query) {
+    const resultsDiv = document.getElementById('results');
+    
+    if (!data.ids || data.ids.length === 0) {
+        resultsDiv.innerHTML = '<div class="result-item">No results found.</div>';
+        return;
+    }
+    
+    let html = `<h3>Search Results (${data.ids.length} found)</h3>`;
+
+console.log(data);
+
+for (let idx = 0; idx < data.ids.length; idx++) {
+    const hasLongContent = (data.documents[idx] && data.documents[idx].length > 100) || 
+                          (data.metadata[idx].abstract && data.metadata[idx].abstract.length > 100);
+    
+    html += `
+        <div class="result-item">
+            <h4>${escapeHtml(data.metadata[idx].title || 'Untitled Document')}</h4>
+            <div class="meta">
+                ${data.metadata[idx].doc_id || 'N/A'} | 
+                Distance: ${data.distances[idx] ? parseFloat(data.distances[idx].toFixed(3)) : 'N/A'} |
+                Date: ${data.metadata[idx].revised_content || 'N/A'} | 
+                Filename: ${data.metadata[idx].filename|| 'N/A'}
+            </div>
+            
+            <div class="content">
+                ${hasLongContent ? `
+                    <div id="original-content-${idx}" style="display: none;">
+                        ${escapeHtml(data.metadata[idx].abstract || data.documents[idx] || 'No content available')}
+                    </div>
+                    <div id="summary-content-${idx}">
+                        <span class="summary-loading" style="color: #666; font-style: italic;">Generating summary...</span>
+                    </div>
+                    <div style="margin-top: 0.5rem;">
+                        <button onclick="toggleContent(${idx})" class="btn-small" id="toggle-btn-${idx}" style="font-size: 0.8rem; padding: 0.2rem 0.5rem;">Show Abstract</button>
+                    </div>
+                ` : `
+                    ${escapeHtml(data.metadata[idx].abstract || data.documents[idx] || 'No content available').substring(0, 300)}${(data.metadata[idx].abstract || data.documents[idx] || '').length > 300 ? '...' : ''}
+                `}
+            </div>
+            
+            <div class="actions">
+                <a href="#" onclick="viewDocument('${data.metadata[idx].doc_id}')">View Details</a>
+                ${data.metadata[idx].doc_id ? `<a href="${data.metadata[idx].link}" target="_blank">Open in DocDB</a>` : ''}
+                <a href="#" onclick="startChatWithDocument('${data.metadata[idx].doc_id}')">Chat</a>
+            </div>
+        </div>
+    `;
+}
+
+// Set the HTML first
+document.getElementById('results').innerHTML = html;
+
+// Then start async summarization for items with long content
+for (let idx = 0; idx < data.ids.length; idx++) {
+    const hasLongContent = (data.documents[idx] && data.documents[idx].length > 100) || 
+                          (data.metadata[idx].abstract && data.metadata[idx].abstract.length > 100);
+    
+    if (hasLongContent && data.metadata[idx].doc_id) {
+        // Find the file index for this content - you might need to adjust this logic
+        // based on how your data is structured
+        summarizeSearchResult(data.metadata[idx].doc_id, idx, 0, query); // assuming file index 0 for search results
+    }
+}
+
+// Add some CSS for the toggle button
+const style = document.createElement('style');
+style.textContent = `
+    .btn-small {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        color: #495057;
+        cursor: pointer;
+        border-radius: 3px;
+        transition: background-color 0.2s;
+    }
+    
+    .btn-small:hover {
+        background-color: #e9ecef;
+    }
+    
+    .summary-loading {
+        animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
+    }
+`;
+document.head.appendChild(style);
+}
+
+
+
+
+function viewDocument(docid) {
+    console.log('viewDocument');
+    console.log(docid);
+    if (!docid) return;
+    
+    // Show loading
+    document.getElementById('loading').style.display = 'block';
+    
+    fetch(`/api/document/${docid}`)
+    .then(response => {
+        return response.json()})
+    .then(data => {
+        document.getElementById('loading').style.display = 'none';
+        if (data.error) {
+            showError(data.error);
+            return;
+        }
+        if (data == null) {
+            showError('Error loading document: Not present in default collection.' + data.error);
+            return;
+        }
+        
+        // Display document details in a modal-like view
+        console.log('viewDocument');
+        console.log(data);
+        displayDocumentDetails(data);
+    })
+    .catch(error => {
+        document.getElementById('loading').style.display = 'none';
+        showError('Error loading document: ' + error.message);
+    });
+}
+
+//{'files': [{'text': 'audio', 'link': 'https://mu2e-docdb.fnal.gov/cgi-bin/sso/RetrieveFile?docid=53128&filename=audio1726078884.m4a&version=1', 'filename': 'audio1726078884.m4a', 'type': 'mp4'}, {'text': 'video', 'link': 'https://mu2e-docdb.fnal.gov/cgi-bin/sso/RetrieveFile?docid=53128&filename=video1726078884.mp4&version=1', 'type': 'mp4', 'filename': 'video1726078884.mp4'}], 'docid_str': 'Mu2e-doc-53128-v1', 'abstract': 'audio and video recording of Wed 11-June DAQ parallel session - Mu2e Frascati Collab Mtg June 2025', 'revised_content': '12 Jun 2025, 03:44', 'version': 1, 'title': 'audio and video recording of Wed 11-June DAQ parallel session - Mu2e Frascati Collab Mtg June 2025', 'revised_meta': '12 Jun 2025, 03:44', 'created_timestamp': 1749717840, 'docid': 53128, 'revised_timestamp': 1749717840, 'topics': 'DAQ Systems', 'doc_type': 'mu2e-docdb', 'doc_id': 'mu2e-docdb-53128', 'created': '12 Jun 2025, 03:44'}
+
+
+function displayDocumentDetails(doc) {
+    console.log('displayDocumentDetails');
+    console.log(doc);
+    const resultsDiv = document.getElementById('results');
+    
+    let html = `
+        <div class="card" style="margin-top: 2rem; border: 2px solid #3498db;">
+            <h3>Document Details</h3>
+            <button onclick="performSearch()" class="btn" style="float: right; margin-top: -2rem;">Back to Results</button>
+            <div style="clear: both;"></div>
+            
+            <h4>${escapeHtml(doc.title || 'Untitled Document')}</h4>
+            <div class="meta" style="margin: 1rem 0;">
+                ${doc.docid || 'N/A'} | 
+                <strong>Date:</strong> ${doc.revised_content || 'N/A'} | 
+                <strong>Version:</strong> ${doc.version || 'N/A'}
+            </div>
+            
+            ${doc.abstract ? `<div><strong>Abstract:</strong><br>${escapeHtml(doc.abstract)}</div>` : ''}
+            ${doc.content ? `<div style="margin-top: 1rem;"><strong>Content:</strong><br><pre style="white-space: pre-wrap; background: #f8f9fa; padding: 1rem; border-radius: 4px;">${escapeHtml(doc.content.substring(0, 2000))}${doc.content.length > 2000 ? '\n\n... (truncated)' : ''}</pre></div>` : ''}
+            
+            ${doc.files && doc.files.length > 0 ? `
+                <div style="margin-top: 1rem;">
+                    <strong>Files:</strong>
+                    ${doc.files.map((file, idx) => `
+                        <div style="margin: 0.5rem 0; padding: 0.5rem; background: #f8f9fa; border-radius: 4px;">
+                            <strong>File:</strong> ${escapeHtml(file.filename || 'Unnamed file')}<br>
+                            ${file.text ? `
+                                <div style="margin-top: 0.5rem; display: none;">
+                                    <strong>Text:</strong> ${escapeHtml(file.text.substring(0, 300))}${file.text.length > 300 ? '...' : ''}
+                                </div>
+                                <div id="summary-${idx}" style="margin-top: 0.5rem;">
+                                    <strong>Summary:</strong> 
+                                    <span class="summary-loading" style="color: #666; font-style: italic;">Generating summary...</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            ` : ''}
+            
+            <div style="margin-top: 1rem;">
+                ${doc.docid ? `<a href="https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid=${doc.docid}" target="_blank" class="btn">Open in DocDB</a>` : ''}
+                <button onclick="startChatWithDocument('${doc.doc_id}')" class="btn" style="margin-left: 1rem; background: #27ae60;">Chat</button>
+            </div>
+        </div>
+    `;
+    
+    resultsDiv.innerHTML = html;
+    
+    // Start async summarization for files with text content
+    if (doc.files && doc.files.length > 0) {
+        doc.files.forEach((file, idx) => {
+            if (file.text && file.text.trim().length > 0) {
+                console.log(file);
+                if (file.text.trim().length > 100) {
+                    summarizeFile(doc.doc_id, idx);
+                } else {
+                    const summaryElement = document.getElementById(`summary-${idx}`);
+                    summaryElement.innerHTML = `
+                        <strong>Text:</strong> 
+                        <span style="color: #2c3e50;">${escapeHtml(file.text)}</span>
+                    `;
+                }
+            }
+        });
+    }
+}
+
+
+// Allow Enter key to trigger search
+document.getElementById('searchQuery').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        performSearch();
+    }
+});
+
+// Function to toggle between summary and original content
+function toggleContent(resultIndex) {
+    const originalDiv = document.getElementById(`original-content-${resultIndex}`);
+    const summaryDiv = document.getElementById(`summary-content-${resultIndex}`);
+    const toggleBtn = document.getElementById(`toggle-btn-${resultIndex}`);
+    
+    if (originalDiv.style.display === 'none') {
+        // Show original, hide summary
+        originalDiv.style.display = 'block';
+        summaryDiv.style.display = 'none';
+        toggleBtn.textContent = 'Show Summary';
+    } else {
+        // Show summary, hide original
+        originalDiv.style.display = 'none';
+        summaryDiv.style.display = 'block';
+        toggleBtn.textContent = 'Show Abstract';
+    }
+}
+
+</script>
+{% endblock %}

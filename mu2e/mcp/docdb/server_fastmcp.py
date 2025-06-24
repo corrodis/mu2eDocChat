@@ -54,7 +54,8 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
         print(f"Using default collection for {dbname}", file=sys.stderr)
     
     # Initialize database connection
-    db = mu2e.docdb(login=True, collection=collection)
+    #db = mu2e.docdb(login=True, collection=collection)
+    db = None
     
     try:
         yield AppContext(db=db, collection=collection, dbname=dbname)
@@ -62,6 +63,12 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
         # Cleanup would go here if needed
         pass
 
+def get_db():
+    app_context = get_app_context()
+    if app_context.db is None:
+        print("log into docdb")
+        app_context.db = mu2e.docdb(login=True, collection=app_context.collection)
+    return app_context.db
 
 # Initialize FastMCP server
 mcp = FastMCP("docdb", lifespan=app_lifespan)
@@ -81,7 +88,7 @@ async def list(
     from mu2e.mcp.docdb.tools.list_tool import handle_list_tool
     
     arguments = {"days": days}
-    results = await handle_list_tool(arguments, get_app_context().db)
+    results = await handle_list_tool(arguments, get_db())
     return results[0].text
 
 
@@ -158,7 +165,8 @@ async def docdb_search(
     # Remove None values
     arguments = {k: v for k, v in arguments.items() if v is not None}
     
-    results = await handle_docdb_search_tool(arguments, get_app_context().db)
+
+    results = await handle_docdb_search_tool(arguments, get_db())
     return results[0].text
 
 

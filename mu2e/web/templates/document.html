@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}Document Lookup - mu2eDocChat{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/document-styles.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Mu2e Document Lookup</h2>
+    
+    <div class="input-group">
+        <input type="text" id="docIdInput" placeholder="Enter document ID (e.g., mu2e-docdb-12345)" class="flex-1">
+        <button onclick="lookupDocument()" class="btn">Lookup Document</button>
+    </div>
+    
+    <div id="loading" class="loading" style="display: none;">
+        Loading document...
+    </div>
+    
+    <div id="error" class="error" style="display: none;"></div>
+    
+    <div id="results" class="document-results"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/document-utils.js') }}"></script>
+<script>
+document.getElementById('docIdInput').addEventListener('focus', function() {
+    if (this.value === '') {
+        this.value = 'mu2e-docdb-';
+        // Optional: position cursor at the end
+        this.setSelectionRange(this.value.length, this.value.length);
+    }
+});
+
+function lookupDocument() {
+    const docId = document.getElementById('docIdInput').value.trim();
+    
+    if (!docId) {
+        showError('Please enter a document ID');
+        return;
+    }
+    
+    // Show loading
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('error').style.display = 'none';
+    document.getElementById('results').innerHTML = '';
+    
+    // Make API request
+    fetch(`/api/document/${encodeURIComponent(docId)}`)
+    .then(response => {
+        return response.json()
+    })
+    .then(data => {
+        document.getElementById('loading').style.display = 'none';
+        if (data.error) {
+            showError(data.error);
+            return;
+        }
+        if (data == null) {
+            showError('Document not found or not present in default collection.');
+            return;
+        }
+        
+        // Display document details
+        displayDocumentDetails(data);
+    })
+    .catch(error => {
+        document.getElementById('loading').style.display = 'none';
+        showError('Error loading document: ' + error.message);
+    });
+}
+
+function displayDocumentDetails(doc) {
+    const resultsDiv = document.getElementById('results');
+    
+    let html = `
+        <div class="card document-detail-card">
+            <h3>Document Details</h3>
+            
+            <h4>${escapeHtml(doc.title || 'Untitled Document')}</h4>
+            <div class="meta">
+                ${doc.docid || 'N/A'} | 
+                <strong>Date:</strong> ${doc.revised_content || 'N/A'} | 
+                <strong>Version:</strong> ${doc.version || 'N/A'}
+            </div>
+            
+            ${doc.abstract ? `<div class="abstract"><strong>Abstract:</strong><br>${escapeHtml(doc.abstract)}</div>` : ''}
+            ${doc.content ? `<div class="content-preview"><strong>Content:</strong><br><pre>${escapeHtml(doc.content.substring(0, 2000))}${doc.content.length > 2000 ? '\n\n... (truncated)' : ''}</pre></div>` : ''}
+            
+            ${doc.files && doc.files.length > 0 ? `
+                <div class="files-section">
+                    <strong>Files:</strong>
+                    ${doc.files.map((file, idx) => `
+                        <div class="file-item">
+                            <strong>File:</strong> ${escapeHtml(file.filename || 'Unnamed file')}<br>
+                            ${file.text ? `
+                                <div id="summary-${idx}" style="margin-top: 0.5rem;">
+                                    <strong>Summary:</strong> 
+                                    <span class="summary-loading">Generating summary...</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            ` : ''}
+            
+            <div class="actions">
+                ${doc.docid ? `<a href="https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid=${doc.docid}" target="_blank" class="btn">Open in DocDB</a>` : ''}
+                <button onclick="startChatWithDocument('${doc.doc_id}')" class="btn btn-chat">Chat about this Document</button>
+            </div>
+        </div>
+    `;
+    
+    resultsDiv.innerHTML = html;
+    
+    // Start async summarization for files with text content
+    if (doc.files && doc.files.length > 0) {
+        doc.files.forEach((file, idx) => {
+            if (file.text && file.text.trim().length > 0) {
+                if (file.text.trim().length > 100) {
+                    summarizeFile(doc.doc_id, idx);
+                } else {
+                    const summaryElement = document.getElementById(`summary-${idx}`);
+                    summaryElement.innerHTML = `
+                        <strong>Text:</strong> 
+                        <span style="color: #2c3e50;">${escapeHtml(file.text)}</span>
+                    `;
+                }
+            }
+        });
+    }
+}
+
+// Allow Enter key to trigger lookup
+document.getElementById('docIdInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        lookupDocument();
+    }
+});
+</script>
+{% endblock %}

@@ -15,6 +15,7 @@ if version.parse(sqlite3.sqlite_version) < version.parse("3.35.0"):
     sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import chromadb
 import tiktoken
+from openai import OpenAI
 from tqdm import tqdm
 
 def getDefaultCollection():
@@ -362,5 +363,12 @@ def generate_from_local(collection=None, chunking_strategy="default", base_path=
     print(f"Successfully processed {processed_count} documents")
     return processed_count
 
-
-
+def getOpenAIClient(base_url=None, api_key=None):
+    load_dotenv()
+    base_url = base_url or os.getenv('MU2E_CHAT_BASE_URL', 'http://localhost:55019/v1')
+    api_key = api_key or os.getenv('MU2E_CHAT_API_KEY', os.getenv('OPENAI_API_KEY', 'whatever+random'))
+        
+    return OpenAI(
+        base_url=base_url,
+        api_key=api_key
+    )

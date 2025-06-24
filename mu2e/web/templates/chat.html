@@ -1,0 +1,520 @@
+{% extends "base.html" %}
+
+{% block title %}Chat - mu2eDocChat{% endblock %}
+
+{% block extra_head %}
+<style>
+    .chat-container {
+        display: flex;
+        flex-direction: column;
+        height: 70vh;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background: white;
+        overflow: hidden;
+    }
+    
+    .chat-header {
+        background: #2c3e50;
+        color: white;
+        padding: 1rem;
+        font-weight: bold;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .chat-header-buttons {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .chat-header-buttons button {
+        background: rgba(255, 255, 255, 0.2);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        padding: 0.4rem 0.8rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: background-color 0.3s;
+    }
+    
+    .chat-header-buttons button:hover {
+        background: rgba(255, 255, 255, 0.3);
+    }
+    
+    .chat-header-buttons button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    
+    .document-context {
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        padding: 0.75rem 1rem;
+        font-size: 0.9rem;
+        color: #495057;
+    }
+    
+    .document-context strong {
+        color: #2c3e50;
+    }
+    
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1rem;
+        background: #fafafa;
+    }
+    
+    .message {
+        margin-bottom: 1rem;
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        max-width: 80%;
+        word-wrap: break-word;
+    }
+    
+    .message.user {
+        background: #3498db;
+        color: white;
+        margin-left: auto;
+        text-align: right;
+    }
+    
+    .message.assistant {
+        background: white;
+        border: 1px solid #ddd;
+        margin-right: auto;
+    }
+    
+    .message.system {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        color: #6c757d;
+        font-style: italic;
+        text-align: center;
+        max-width: 100%;
+    }
+    
+    .chat-input-container {
+        border-top: 1px solid #ddd;
+        padding: 1rem;
+        background: white;
+    }
+    
+    .chat-input-group {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .chat-input {
+        flex: 1;
+        padding: 0.75rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 1rem;
+        resize: none;
+        min-height: 40px;
+        max-height: 120px;
+    }
+    
+    .chat-input:focus {
+        outline: none;
+        border-color: #3498db;
+    }
+    
+    .send-btn {
+        background: #27ae60;
+        color: white;
+        border: none;
+        padding: 0.75rem 1.5rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1rem;
+        white-space: nowrap;
+    }
+    
+    .send-btn:hover:not(:disabled) {
+        background: #219a52;
+    }
+    
+    .send-btn:disabled {
+        background: #bdc3c7;
+        cursor: not-allowed;
+    }
+    
+    .typing-indicator {
+        display: none;
+        padding: 0.75rem 1rem;
+        color: #7f8c8d;
+        font-style: italic;
+    }
+    
+    
+    /* Markdown styling for assistant messages */
+    .message.assistant h1,
+    .message.assistant h2,
+    .message.assistant h3,
+    .message.assistant h4,
+    .message.assistant h5,
+    .message.assistant h6 {
+        margin: 0.5rem 0;
+        color: #2c3e50;
+    }
+    
+    .message.assistant p {
+        margin: 0.5rem 0;
+        line-height: 1.5;
+    }
+    
+    .message.assistant ul,
+    .message.assistant ol {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+    }
+    
+    .message.assistant li {
+        margin: 0.25rem 0;
+    }
+    
+    .message.assistant code {
+        background: #f8f9fa;
+        padding: 0.2rem 0.4rem;
+        border-radius: 3px;
+        font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+        font-size: 0.9em;
+    }
+    
+    .message.assistant pre {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 5px;
+        overflow-x: auto;
+        margin: 0.5rem 0;
+    }
+    
+    .message.assistant pre code {
+        background: none;
+        padding: 0;
+    }
+    
+    .message.assistant blockquote {
+        border-left: 4px solid #3498db;
+        margin: 0.5rem 0;
+        padding-left: 1rem;
+        color: #555;
+        font-style: italic;
+    }
+    
+    .message.assistant a {
+        color: #3498db;
+        text-decoration: none;
+    }
+    
+    .message.assistant a:hover {
+        text-decoration: underline;
+    }
+    
+    .message.assistant table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 0.5rem 0;
+    }
+    
+    .message.assistant th,
+    .message.assistant td {
+        border: 1px solid #ddd;
+        padding: 0.5rem;
+        text-align: left;
+    }
+    
+    .message.assistant th {
+        background-color: #f8f9fa;
+        font-weight: bold;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    
+    <div class="chat-container">
+        <div class="chat-header">
+            <span id="chatTitle">Chat Assistant</span>
+            <div class="chat-header-buttons">
+                <button onclick="startNewChat()" id="newChatBtn">New Chat</button>
+                <button onclick="endCurrentChat()" id="endChatBtn" style="display: none;">End Chat</button>
+            </div>
+        </div>
+        
+        <div id="documentContext" class="document-context" style="display: none;">
+            <strong>Document Context:</strong> <span id="contextText"></span>
+        </div>
+        
+        <div class="chat-messages" id="chatMessages">
+            <div class="message system">
+                Start a new chat or select a document from the search page to begin chatting about it.
+            </div>
+        </div>
+        
+        <div class="typing-indicator" id="typingIndicator">
+            Assistant is typing...
+        </div>
+        
+        <div class="chat-input-container">
+            <div class="chat-input-group">
+                <textarea 
+                    id="messageInput" 
+                    class="chat-input" 
+                    placeholder="Type your message here..." 
+                    rows="1"
+                ></textarea>
+                <button onclick="sendMessage()" class="send-btn" id="sendBtn" disabled>Send</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+<script>
+let currentSessionId = null;
+let isWaitingForResponse = false;
+let socket = null;
+
+// Auto-resize textarea
+document.getElementById('messageInput').addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+});
+
+// Start new chat when clicking in message input if no chat is active
+document.getElementById('chatTitle').addEventListener('click', function() {
+    if (!currentSessionId) {
+        startNewChat();
+    }
+});
+
+// Start new chat when clicking in message input if no chat is active
+document.getElementById('messageInput').addEventListener('focus', function() {
+    console.log("DEBUG: messageInput clicked");
+    const endChatBtn = document.getElementById('endChatBtn');
+    
+    // Check if the end chat button is not shown (display: none or not visible)
+    if (endChatBtn.style.display === 'none' || window.getComputedStyle(endChatBtn).display === 'none') {
+        startNewChat();
+    }
+});
+
+// Allow Enter to send (Shift+Enter for new line)
+document.getElementById('messageInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+});
+
+function generateSessionId() {
+    return 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+function initializeSocket() {
+    if (socket) {
+        socket.disconnect();
+    }
+    
+    socket = io();
+    
+    socket.on('chat_started', function(data) {
+        if (data.success) {
+            // Update UI
+            //document.getElementById('messageInput').disabled = false;
+            document.getElementById('sendBtn').disabled = false;
+            document.getElementById('endChatBtn').style.display = 'inline-block';
+            
+            // Clear messages
+            const messagesContainer = document.getElementById('chatMessages');
+            messagesContainer.innerHTML = '';
+            
+            // Show document context if present
+            if (data.document_context && data.document_context.document_id) {
+                document.getElementById('contextText').textContent = 
+                    `${data.document_context.document_title} (ID: ${data.document_context.document_id})`;
+                document.getElementById('documentContext').style.display = 'block';
+                document.getElementById('chatTitle').textContent = 
+                    `Chat - ${data.document_context.document_title}`;
+                    
+                // Add welcome message
+                addMessage('system', `Chat session started with document context: ${data.document_context.document_title}`);
+            } else {
+                document.getElementById('documentContext').style.display = 'none';
+                document.getElementById('chatTitle').textContent = 'Chat Assistant';
+                addMessage('system', 'New chat session started. Ask me anything about Mu2e!');
+            }
+        }
+    });
+    
+    socket.on('message_response', function(data) {
+        addMessage('assistant', data.response);
+        setWaitingState(false);
+    });
+    
+    socket.on('chat_ended', function(data) {
+        // Reset UI
+        currentSessionId = null;
+        document.getElementById('messageInput').disabled = true;
+        document.getElementById('sendBtn').disabled = true;
+        document.getElementById('endChatBtn').style.display = 'none';
+        document.getElementById('documentContext').style.display = 'none';
+        document.getElementById('chatTitle').textContent = 'Chat Assistant';
+        
+        const messagesContainer = document.getElementById('chatMessages');
+        messagesContainer.innerHTML = '<div class="message system">Chat session ended. Start a new chat to continue.</div>';
+    });
+    
+    socket.on('error', function(data) {
+        console.error('Socket error:', data.message);
+        addMessage('system', `Error: ${data.message}`);
+        setWaitingState(false);
+    });
+}
+
+function startNewChat(docId = null) {
+    try {
+        if (!socket) {
+            initializeSocket();
+        }
+        
+        currentSessionId = generateSessionId();
+        
+        const requestData = {
+            session_id: currentSessionId
+        };
+        
+        if (docId) {
+            requestData.doc_id = docId;
+        }
+        
+        socket.emit('start_chat', requestData);
+        
+    } catch (error) {
+        console.error('Error starting chat:', error);
+        addMessage('system', `Error starting chat: ${error.message}`);
+    }
+}
+
+function endCurrentChat() {
+    if (!currentSessionId || !socket) return;
+    
+    try {
+        socket.emit('end_chat', {
+            session_id: currentSessionId
+        });
+        
+    } catch (error) {
+        console.error('Error ending chat:', error);
+        // Reset UI even if there's an error
+        currentSessionId = null;
+        document.getElementById('messageInput').disabled = true;
+        document.getElementById('sendBtn').disabled = true;
+        document.getElementById('endChatBtn').style.display = 'none';
+        document.getElementById('documentContext').style.display = 'none';
+        document.getElementById('chatTitle').textContent = 'Chat Assistant';
+        
+        const messagesContainer = document.getElementById('chatMessages');
+        messagesContainer.innerHTML = '<div class="message system">Chat session ended. Start a new chat to continue.</div>';
+    }
+}
+
+function sendMessage() {
+    if (!currentSessionId || isWaitingForResponse || !socket) return;
+    
+    const messageInput = document.getElementById('messageInput');
+    const message = messageInput.value.trim();
+    
+    if (!message) return;
+    
+    // Add user message to UI
+    addMessage('user', message);
+    messageInput.value = '';
+    messageInput.style.height = 'auto';
+    
+    // Show typing indicator
+    setWaitingState(true);
+    
+    try {
+        socket.emit('send_message', {
+            session_id: currentSessionId,
+            message: message
+        });
+        
+    } catch (error) {
+        console.error('Error sending message:', error);
+        addMessage('system', `Error: ${error.message}`);
+        setWaitingState(false);
+    }
+}
+
+function addMessage(role, content) {
+    const messagesContainer = document.getElementById('chatMessages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${role}`;
+    
+    if (role === 'assistant') {
+        // Parse markdown for assistant messages
+        messageDiv.innerHTML = marked.parse(content);
+    } else {
+        // Use plain text for user and system messages
+        messageDiv.textContent = content;
+    }
+    
+    messagesContainer.appendChild(messageDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function setWaitingState(waiting) {
+    isWaitingForResponse = waiting;
+    document.getElementById('sendBtn').disabled = waiting || !currentSessionId;
+    document.getElementById('messageInput').disabled = waiting || !currentSessionId;
+    document.getElementById('typingIndicator').style.display = waiting ? 'block' : 'none';
+}
+
+// Function to start chat with document (called from search page)
+function startChatWithDocument(docId) {
+    // Switch to chat tab if we're not already there
+    window.location.href = '/chat';
+    
+    // Store the docId to start chat with when page loads
+    sessionStorage.setItem('startChatWithDoc', docId);
+}
+
+// Check if we should start a chat with a document when page loads
+window.addEventListener('load', function() {
+    initializeSocket();
+    
+    const docId = sessionStorage.getItem('startChatWithDoc');
+    if (docId) {
+        sessionStorage.removeItem('startChatWithDoc');
+        startNewChat(docId);
+    }
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (currentSessionId && socket) {
+        // Try to end chat (may not complete due to page unload)
+        socket.emit('end_chat', {
+            session_id: currentSessionId
+        });
+    }
+    
+    if (socket) {
+        socket.disconnect();
+    }
+});
+</script>
+{% endblock %}

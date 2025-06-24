@@ -2,6 +2,8 @@ import os
 import time
 import asyncio
 import argparse
+import signal
+import sys
 from mu2e import slack
 
 async def cleanup_task(slack_bot):
@@ -12,6 +14,18 @@ async def cleanup_task(slack_bot):
 
 async def run_bot(args):
     """Run the slack bot with async support"""
+    shutdown_event = asyncio.Event()
+    
+    def signal_handler():
+        """Handle shutdown signals gracefully"""
+        print("\nReceived shutdown signal...")
+        shutdown_event.set()
+    
+    # Set up signal handlers
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, signal_handler)
+    
     try:
         # Create slack bot instance
         if args.dm_only:
@@ -37,19 +51,23 @@ async def run_bot(args):
         
         print("Bot is running... Press Ctrl+C to stop")
         
-        # Keep the event loop running
+        # Wait for shutdown signal
+        await shutdown_event.wait()
+        
+        # Cancel cleanup task
+        cleanup.cancel()
         try:
-            while True:
-                await asyncio.sleep(1)
-        except KeyboardInterrupt:
-            print("\nReceived shutdown signal...")
-            cleanup.cancel()
-            
-            # Gracefully shutdown the bot
-            await s.shutdown()
+            await cleanup
+        except asyncio.CancelledError:
+            pass
+        
+        # Gracefully shutdown the bot
+        await s.shutdown()
+        print("Bot shutdown complete")
             
     except Exception as e:
         print(f"Error: {str(e)}")
+        sys.exit(1)
 
 def main():
     parser = argparse.ArgumentParser(description='Mu2e Slack Bot with MCP Integration')
@@ -65,8 +83,13 @@ def main():
     if not os.getenv('MU2E_SLACK_BOT_TOKEN'):
         raise ValueError("Slack bot token not found. Please set MU2E_SLACK_BOT_TOKEN environment variable")
 
-    # Run the async bot
-    asyncio.run(run_bot(args))
+    # Run the async bot with clean shutdown
+    try:
+        asyncio.run(run_bot(args))
+    except KeyboardInterrupt:
+        # This should not happen now, but just in case
+        print("\nShutdown complete")
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()

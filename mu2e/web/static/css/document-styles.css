@@ -1,0 +1,155 @@
+/* Shared styles for document display across search and document pages */
+
+.document-results,
+.search-results {
+    margin-top: 2rem;
+}
+
+.result-item {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.result-item h4 {
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+}
+
+.result-item .meta {
+    font-size: 0.9rem;
+    color: #7f8c8d;
+    margin-bottom: 0.5rem;
+}
+
+.result-item .content {
+    margin-bottom: 0.5rem;
+}
+
+.result-item .actions {
+    display: flex;
+    gap: 1rem;
+}
+
+.result-item .actions a,
+.result-item .actions button {
+    color: #3498db;
+    text-decoration: none;
+    font-size: 0.9rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+}
+
+.result-item .actions a:hover,
+.result-item .actions button:hover {
+    text-decoration: underline;
+}
+
+/* Button styles */
+.btn-small {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    color: #495057;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+    font-size: 0.8rem;
+    padding: 0.2rem 0.5rem;
+}
+
+.btn-small:hover {
+    background-color: #e9ecef;
+}
+
+/* Summary and loading states */
+.summary-loading {
+    animation: pulse 1.5s infinite;
+    color: #666;
+    font-style: italic;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+/* Document detail view (when clicking "View Details") */
+.document-detail-card {
+    margin-top: 2rem;
+    border: 2px solid #3498db;
+}
+
+.document-detail-card h3 {
+    margin-bottom: 1rem;
+}
+
+.document-detail-card h4 {
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+}
+
+.document-detail-card .meta {
+    margin: 1rem 0;
+    font-size: 0.9rem;
+    color: #7f8c8d;
+}
+
+.document-detail-card .abstract {
+    margin-top: 1rem;
+}
+
+.document-detail-card .content-preview {
+    margin-top: 1rem;
+}
+
+.document-detail-card .content-preview pre {
+    white-space: pre-wrap;
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+.document-detail-card .files-section {
+    margin-top: 1rem;
+}
+
+.document-detail-card .file-item {
+    margin: 0.5rem 0;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.document-detail-card .file-item strong {
+    color: #2c3e50;
+}
+
+.document-detail-card .actions {
+    margin-top: 1rem;
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.document-detail-card .btn-chat {
+    background: #27ae60;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.document-detail-card .btn-chat:hover {
+    background: #219a52;
+    text-decoration: none;
+}

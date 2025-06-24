@@ -28,7 +28,7 @@ async def health_check():
         
         if "unreachable" in status["openai_api"]["status"]:
             print(f"  - OpenAI API not reachable. Check if your API server is running at {status['openai_api']['url']}")
-            print(f"  - if you are usiing an ssh tunnel, check that the port is forwarded")
+            print(f"  - if you are using an ssh tunnel, check that the port is forwarded")
             print(f"  - Set MU2E_CHAT_BASE_URL environment variable if using a different URL")
         
         if "unreachable" in status["mcp_server"]["status"]:
