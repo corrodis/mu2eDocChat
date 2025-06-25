@@ -25,3 +25,6 @@ This commands runs a docdb chat with a slack interface. For more details see [do
 
 ### mu2e-mcp-server
 Model Context Protocol (MCP) server for integration with Claude Desktop and other MCP-compatible AI assistants. Provides vector search, full-text search, and document retrieval tools. See [mu2e/mcp/docdb/REDME.md](mu2e/mcp/docdb/REDME.md) for setup instructions.
+
+### mu2e-web
+Web interface providing document search, chat, and document lookup through a browser. Run with `mu2e-web` and access at http://localhost:5000. See [doc/web.md](doc/web.md) for details.

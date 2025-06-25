@@ -268,7 +268,7 @@ function displayDocumentDetails(doc) {
                                     <strong>Text:</strong> ${escapeHtml(file.text.substring(0, 300))}${file.text.length > 300 ? '...' : ''}
                                 </div>
                                 <div id="summary-${idx}" style="margin-top: 0.5rem;">
-                                    <strong>Summary:</strong> 
+                                    <strong>AI Summary: </strong> 
                                     <span class="summary-loading" style="color: #666; font-style: italic;">Generating summary...</span>
                                 </div>
                             ` : ''}
@@ -323,7 +323,7 @@ function toggleContent(resultIndex) {
         // Show original, hide summary
         originalDiv.style.display = 'block';
         summaryDiv.style.display = 'none';
-        toggleBtn.textContent = 'Show Summary';
+        toggleBtn.textContent = 'Show AI Summary';
     } else {
         // Show summary, hide original
         originalDiv.style.display = 'none';

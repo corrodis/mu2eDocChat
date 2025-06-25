@@ -5,6 +5,7 @@ Provides both direct DocDB search and chat interfaces
 
 import os
 import asyncio
+import argparse
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 from mu2e.chat_mcp import MCPClient,Chat
@@ -237,8 +238,13 @@ def handle_disconnect():
     print('Client disconnected')
 
 def main():
-    socketio.run(app, debug=True, host='127.0.0.1', port=5000)
-    #app.run(debug=True, host='127.0.0.1', port=5000)
+    parser = argparse.ArgumentParser(description='Mu2e DocDB Web Interface')
+    parser.add_argument('--port', type=int, default=5000,
+                       help='Port to run the web server on (default: 5000)')
+    
+    args = parser.parse_args()
+    
+    socketio.run(app, debug=True, host='127.0.0.1', port=args.port)
 
 if __name__ == '__main__':
     main()
