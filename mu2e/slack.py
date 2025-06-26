@@ -278,7 +278,8 @@ class slack:
                 
                 # Build user context
                 user_context = {
-                    "user_name": user_name
+                    "user_name": user_name,
+                    "interface":"slack"
                 }
                 
                 # Add Slack channel URL and message URL if not a DM

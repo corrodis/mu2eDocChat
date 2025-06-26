@@ -6,6 +6,8 @@ import io
 from urllib.parse import quote
 from datetime import datetime
 import os
+import json
+from pathlib import Path
 from . import parser
 from .utils import get_data_dir
 
@@ -489,5 +491,13 @@ class docdb:
                     print("mu2e-docdb-"+str(doc['id'])+" - present")
             if doc_ is None:
                 self.get_parse_store(doc['id'], save_raw=save_raw)
+        
+        # Save timestamp
+        collection_name = getattr(self.collection, 'name', 'default') if self.collection else 'default'
+        timestamp_file = Path(get_data_dir()) / f"last_generate_{collection_name}.json"
+        Path(get_data_dir()).mkdir(exist_ok=True)
+        
+        with open(timestamp_file, 'w') as f:
+            json.dump({"last_run": datetime.now().isoformat(), "days": days}, f)
             
     

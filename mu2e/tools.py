@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from .utils import get_data_dir, convert_to_timestamp, get_chroma_path
 from .chunking import chunk_text_simple
 import sqlite3
+import threading
+import time
 from datetime import datetime
 from packaging import version
 if version.parse(sqlite3.sqlite_version) < version.parse("3.35.0"):
@@ -361,7 +363,48 @@ def generate_from_local(collection=None, chunking_strategy="default", base_path=
             continue
     
     print(f"Successfully processed {processed_count} documents")
+    
+    # Save timestamp
+    collection_name = getattr(collection, 'name', 'default') if collection else 'default'
+    timestamp_file = Path(get_data_dir()) / f"last_generate_{collection_name}.json"
+    Path(get_data_dir()).mkdir(exist_ok=True)
+    
+    with open(timestamp_file, 'w') as f:
+        json.dump({"last_run": datetime.now().isoformat(), "processed": processed_count}, f)
+    
     return processed_count
+
+def start_background_generate(interval_minutes=5, days=1, collection=None, from_local=False):
+    """Start background generation every interval_minutes"""
+    def background_loop():
+        from mu2e import docdb
+        while True:
+            try:
+                print("Running background generate...")
+                if from_local:
+                    generate_from_local(collection=collection)
+                else:
+                    db = docdb(collection=collection)
+                    db.generate(days=days)
+                    print(f"Background generate completed, sleeping for {interval_minutes} minutes")
+            except Exception as e:
+                print(f"Background generate failed: {e}")
+            time.sleep(interval_minutes * 60)
+    
+    thread = threading.Thread(target=background_loop, daemon=True)
+    thread.start()
+    print(f"Started background generate (every {interval_minutes} minutes)")
+
+def get_last_generate_info(collection_name='default'):
+    """Get last generate timestamp info"""
+    try:
+        timestamp_file = Path(get_data_dir()) / f"last_generate_{collection_name}.json"
+        if timestamp_file.exists():
+            with open(timestamp_file, 'r') as f:
+                return json.load(f)
+        return {"last_run": None}
+    except:
+        return {"last_run": None}
 
 def getOpenAIClient(base_url=None, api_key=None):
     load_dotenv()

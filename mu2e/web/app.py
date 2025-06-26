@@ -11,7 +11,7 @@ from flask_socketio import SocketIO, emit
 from mu2e.chat_mcp import MCPClient,Chat
 import json
 from datetime import datetime
-from mu2e.tools import getDefaultCollection, load2, getOpenAIClient
+from mu2e.tools import getDefaultCollection, load2, getOpenAIClient, start_background_generate, get_last_generate_info
 from mu2e.search import search, search_fulltext
 from mu2e.utils import list_to_search_result
 from mu2e import docdb, anl
@@ -124,6 +124,35 @@ def get_document_summary(docid):
     except Exception as e:
         return jsonify({'error': str(e)})
 
+@app.route('/api/generate-info')
+def get_generate_info():
+    """Get last generate timestamp info"""
+    try:
+        info = get_last_generate_info('default')
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/generate', methods=['POST'])
+def trigger_generate():
+    """Trigger manual generate"""
+    try:
+        def run_generate():
+            db = docdb()
+            db.generate(days=1)
+
+            # temporary
+            db_argo = docdb(collection=anl.get_collection(url="http://localhost:55019/v1/embed"))
+            db_argo.generate(days=1)
+        
+        # Run in background thread
+        import threading
+        threading.Thread(target=run_generate, daemon=True).start()
+        
+        return jsonify({'status': 'started', 'message': 'Generate started in background'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @socketio.on('start_chat')
 def handle_start_chat(data):
     """Handle WebSocket chat start request"""
@@ -141,6 +170,7 @@ def handle_start_chat(data):
             # Load document to provide context
             doc = load2(doc_id, nodb=True)
             user_context = {
+                'interface':"web",
                 'document_id': doc_id,
                 'document_title': doc.get('title', 'Unknown'),
                 'document_content': doc.get('content', ''),  # Added the missing value
@@ -244,6 +274,11 @@ def main():
     
     args = parser.parse_args()
     
+    # Start background generation
+    start_background_generate(interval_minutes=5, days=1)
+    #start_background_generate(interval_minutes=5, days=1, from_local=True,)
+    
+    print(f"Starting Mu2e DocDB Web Interface on http://127.0.0.1:{args.port}")
     socketio.run(app, debug=True, host='127.0.0.1', port=args.port)
 
 if __name__ == '__main__':

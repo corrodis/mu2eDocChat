@@ -126,6 +126,48 @@
             padding: 2rem;
             color: #7f8c8d;
         }
+        
+        .status-bar {
+            background: #ecf0f1;
+            padding: 0.3rem 0;
+            font-size: 0.8rem;
+            color: #7f8c8d;
+            border-top: 1px solid #bdc3c7;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+        }
+        
+        body {
+            padding-bottom: 1.5rem; /* Space for fixed status bar */
+        }
+        
+        .status-bar .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 8px;
+        }
+        
+        .generate-button {
+            color: #848484; 
+            border: none;
+            padding: 0.25rem 0.5rem;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        
+        .generate-button:hover {
+            background: #cbcbcb;
+        }
+        
+        .generate-button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
@@ -144,6 +186,88 @@
     <div class="container">
         {% block content %}{% endblock %}
     </div>
+    
+    <div class="status-bar">
+        <div class="container">
+            <span id="lastUpdateText">Last update: Loading...</span>
+            <button onclick="triggerGenerate()" class="generate-button" id="generateBtn">Update Now</button>
+        </div>
+    </div>
+    
+    <script>
+    // Load and display last generate info
+    function loadGenerateInfo() {
+        fetch('/api/generate-info')
+        .then(response => response.json())
+        .then(data => {
+            const textElement = document.getElementById('lastUpdateText');
+            let newText;
+
+            if (data.last_run) {
+                const date = new Date(data.last_run);
+                newText = `Last update: ${date.toLocaleString()}`;
+            } else {
+                newText = 'Last update: Never';
+            }
+            textElement.textContent = newText;
+
+            if (newText !== previousText) {
+                clearInterval(checkInterval);
+                const button = document.getElementById('generateBtn');
+                button.disabled = false;
+                button.textContent = 'Update Now';
+                previousText = newText;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading generate info:', error);
+            document.getElementById('lastUpdateText').textContent = 'Last update: Error loading';
+        });
+    }
+    
+    let checkInterval;
+    let previousText = document.getElementById('lastUpdateText').textContent;
+
+    // Trigger manual generate
+    function triggerGenerate() {
+        const button = document.getElementById('generateBtn');
+        button.disabled = true;
+        button.textContent = 'Updating...';
+        
+        fetch('/api/generate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'started') {
+                // Check for completion every 2 seconds
+                checkInterval = setInterval(() => {
+                    loadGenerateInfo();
+                }, 2000);
+                
+                // Stop checking after 2 minutes
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    const button = document.getElementById('generateBtn');
+                    button.disabled = false;
+                    button.textContent = 'Update Now';
+                }, 120000);
+            }
+        })
+        .catch(error => {
+            console.error('Error triggering generate:', error);
+            button.disabled = false;
+            button.textContent = 'Update Now';
+        });
+    }
+    
+    // Load generate info on page load
+    document.addEventListener('DOMContentLoaded', loadGenerateInfo);
+    
+    // Refresh generate info every 30 seconds
+    setInterval(loadGenerateInfo, 30000);
+    </script>
     
     {% block scripts %}{% endblock %}
 </body>
