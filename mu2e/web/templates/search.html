@@ -44,6 +44,7 @@
 <script src="{{ url_for('static', filename='js/document-utils.js') }}"></script>
 <script>
 let currentQuery = '';
+let currentSessionId = null;
 
 function performSearch() {
     const searchType = document.getElementById('searchType').value;
@@ -95,6 +96,10 @@ function performSearch() {
         }
         
         displayResults(data, query);
+        currentSessionId = data.search_id
+        console.log("Debug")
+        console.log(data)
+        console.log(currentSessionId)
     })
     .catch(error => {
         document.getElementById('loading').style.display = 'none';
@@ -145,9 +150,9 @@ for (let idx = 0; idx < data.ids.length; idx++) {
             </div>
             
             <div class="actions">
-                <a href="#" onclick="viewDocument('${data.metadata[idx].doc_id}')">View Details</a>
-                ${data.metadata[idx].doc_id ? `<a href="${data.metadata[idx].link}" target="_blank">Open in DocDB</a>` : ''}
-                <a href="#" onclick="startChatWithDocument('${data.metadata[idx].doc_id}')">Chat</a>
+                <a href="#" onclick="log('${idx}','view'); viewDocument('${data.metadata[idx].doc_id}')">View Details</a>
+                ${data.metadata[idx].doc_id ? `<a href="${data.metadata[idx].link}" target="_blank" onclick="log('${idx}','docdb');">Open in DocDB</a>` : ''}
+                <a href="#" onclick="log('${idx}','chat'); startChatWithDocument('${data.metadata[idx].doc_id}')">Chat</a>
             </div>
         </div>
     `;
@@ -197,7 +202,29 @@ style.textContent = `
 document.head.appendChild(style);
 }
 
-
+async function log(result_id, type) {
+    if (!currentSessionId) {
+        console.error('No session ID available');
+        return;
+    }
+    data = {
+        'event_type': 'search-action',
+        'search_id': currentSessionId,
+        'result_id': result_id,
+        'button': type
+    }
+    try {
+        await fetch('/log_interaction', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });                
+    } catch (error) {
+        console.error('Failed to log button click:', error);
+    }
+}
 
 
 function viewDocument(docid) {

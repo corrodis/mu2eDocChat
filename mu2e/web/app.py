@@ -8,16 +8,35 @@ import asyncio
 import argparse
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
+import logging
 from mu2e.chat_mcp import MCPClient,Chat
 import json
 from datetime import datetime
 from mu2e.tools import getDefaultCollection, load2, getOpenAIClient, start_background_generate, get_last_generate_info
 from mu2e.search import search, search_fulltext
-from mu2e.utils import list_to_search_result
+from mu2e.utils import list_to_search_result, get_lof_dir
 from mu2e import docdb, anl
+import uuid
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# Logging
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[
+        logging.FileHandler(get_lof_dir()/'web.log'),
+        logging.StreamHandler()
+    ]
+)
+interaction_logger = logging.getLogger('user_interactions')
+interaction_logger.setLevel(logging.INFO)
+interaction_logger.propagate = False
+file_handler = logging.FileHandler(get_lof_dir() / 'web_interactions.log')
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+if not interaction_logger.handlers:
+    interaction_logger.addHandler(file_handler)
 
 # Global variables for services
 
@@ -57,6 +76,7 @@ def search_api():
         n_results = data.get('n_results', 5)
         filters = data.get('filters', None)
         #date_range = data.get('date_range', None)
+        search_id = str(uuid.uuid4())
 
         if type != 'list' and not query:
             return jsonify({'error': 'Query is required'}), 400
@@ -85,11 +105,32 @@ def search_api():
             return jsonify({'error': 'Invalid search type'}), 400
         
         print(results)
+        log_search_interaction(search_id, data, results)
+        results["search_id"] = search_id
         return results
             
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+def log_search_interaction(search_id, data, results):
+    log_data = {
+        'event_type': 'search',
+        'query': data,
+        'results': results,
+        'search_id': search_id,
+        'timestamp': datetime.now().isoformat(),
+        'user_ip': request.remote_addr,
+        'user_agent': request.headers.get('User-Agent', '')
+    }
+    
+    interaction_logger.info(json.dumps(log_data))
+
+@app.route('/log_interaction', methods=['POST'])
+def log_interaction():
+    data = request.json  
+    interaction_logger.info(json.dumps(data))
+
+    return jsonify({'status': 'logged'})
 
 @app.route('/api/document/<string:docid>')
 def get_document(docid):
