@@ -6,7 +6,7 @@ import mcp.types as types
 import mu2e.tools
 
 
-async def handle_get_tool(arguments: dict, db, collection) -> list[types.TextContent]:
+async def handle_get_tool(arguments: dict, db, collection=None) -> list[types.TextContent]:
     """Handle the get tool execution."""
     docid = arguments.get("docid")
     
