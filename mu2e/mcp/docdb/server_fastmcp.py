@@ -81,7 +81,7 @@ def get_app_context() -> AppContext:
 
 
 @mcp.tool()
-async def list(
+async def docdb_list(
     days: int = Field(description="Number of the last n days from which documents are returned."),
     include_documents : bool = Field(description="If true (default), the response contains the document content.", default=True)
 ) -> str:
@@ -95,7 +95,7 @@ async def list(
 
 
 @mcp.tool()
-async def get(
+async def docdb_get(
     docid: str = Field(description="Document id of the document which content is retrieved.")
 ) -> str:
     """Get the content of a document from the docdb by its docid."""
@@ -107,7 +107,7 @@ async def get(
 
 
 @mcp.tool()
-async def search(
+async def docdb_search(
     query: str = Field(description="The query to search for semantically similar content."),
     n_results: int = Field(description="Maximum number of documents to retrieve.", default=5),
     days: Optional[int] = Field(description="Limit search to documents from last N days.", default=None),
@@ -130,7 +130,7 @@ async def search(
 
 
 @mcp.tool()
-async def fulltext_search(
+async def docdb_fulltext_search(
     query: str = Field(description="Keywords or phrases to search for in document text."),
     n_results: int = Field(description="Maximum number of documents to retrieve.", default=5),
     filters: Optional[dict] = Field(description="Advanced ChromaDB filters. See file:///schema/metadata resource for available fields and filter examples.", default=None)
@@ -151,7 +151,7 @@ async def fulltext_search(
 
 
 @mcp.tool()
-async def docdb_search(
+async def docdb_legacy_search(
     query: str = Field(description="The query with the word that are search in an AND mode in title, abstract, and keyword fields."),
     before: Optional[str] = Field(description="Date string in the format YYYY-MM-DD to search for entries before that date.", default=None),
     after: Optional[str] = Field(description="Date string in the format YYYY-MM-DD to search for entries after that date.", default=None)

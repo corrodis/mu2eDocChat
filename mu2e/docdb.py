@@ -284,12 +284,13 @@ class docdb:
         fields = {"abstract":{"search":"Abstract:",          "list":False},
                   "files":   {"search":"Files in Document:", "list":True},
                   "topics":  {"search":"Topics:",            "list":True},
+                  "authors":  {"search":"Authors:",          "list":True},
                   "keyword": {"search":"Keywords:",          "list":True}
                  }
         for field in fields:
             key = soup.find('dt', class_='InfoHeader', string=fields[field]["search"])
             if key:
-                if field == "topics":
+                if field in ["topics","authors"]:
                     tag = key.find_next('ul')
                 else:
                     tag = key.find_next('dd')
