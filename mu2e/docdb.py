@@ -6,9 +6,7 @@ import io
 from urllib.parse import quote
 from datetime import datetime
 import os
-import json
-from pathlib import Path
-from . import parser
+from .parsers import parser
 from .utils import get_data_dir
 
 class docdb:
@@ -400,25 +398,16 @@ class docdb:
         """
         Runs all implemented parsings.
         """
-        doc_ = self.parse_pdf_slides(doc, add_image_descriptions)
-        # TODO: add additional document type parsings
-        return doc_
-    
-    def parse_pdf_slides(self, doc, add_image_descriptions=None):
-        """
-        Uses mu2e.parsers.pdf to parse all pdf documents of a docdb. Adds the parsed text to the doc dict. 
-
-        Args:
-            doc (dict): out put from get
-            add_image_descriptions(str, optional): if set to a method [claude-sonnet, claude-haiku, openAI-o4Minin] the corresponding LLM is used to generate image descriptions.
-        """
         for i, file in enumerate(doc['files']):
-            if file['type'] == "pdf":
-                p = parser.pdf(file['document'])
-                text_out,_ = p.get_sldies_text()
+            try:
+                p = parser(file['document'], file['type'])
+                text_out,_ = p.get_text()
                 if add_image_descriptions:
                     text_out = p.add_image_descriptions()
                 doc['files'][i]['text'] = text_out
+            except Exception as e:
+                print(e)
+                continue
         return doc
   
     def saveFiles(self, doc):
@@ -491,13 +480,5 @@ class docdb:
                     print("mu2e-docdb-"+str(doc['id'])+" - present")
             if doc_ is None:
                 self.get_parse_store(doc['id'], save_raw=save_raw)
-        
-        # Save timestamp
-        collection_name = getattr(self.collection, 'name', 'default') if self.collection else 'default'
-        timestamp_file = Path(get_data_dir()) / f"last_generate_{collection_name}.json"
-        Path(get_data_dir()).mkdir(exist_ok=True)
-        
-        with open(timestamp_file, 'w') as f:
-            json.dump({"last_run": datetime.now().isoformat(), "days": days}, f)
             
     

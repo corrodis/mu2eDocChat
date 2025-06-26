@@ -22,7 +22,11 @@ dependencies = [
     "slack_sdk",
     "pytz",
     "flask",
-    "flask-socketio"
+    "flask-socketio",
+    "python-pptx",
+    "python-docx",
+    "pandas",
+    "pillow",
 ]
 
 [project.optional-dependencies]

@@ -6,21 +6,27 @@ from PIL import Image
 import numpy as np
 import os
 from tqdm import tqdm
+from pptx import Presentation
+#import docx
+#import openpyxl
 
-class pdf:
+
+class parser:
     """
-    Library to parse pdf documents for the use with LLMs.
-
-    Attributes:
-
+    Library to parse documents.
     """
 
-    def __init__(self, document=None):
+    def __init__(self, document, type):
         """
         Args:
             document (io.BytesI): the document
+            type (str): document type, one of [pdf, pptx]
         """
         self.doc = document
+        self.doc_type = type
+        allowed_types = ['pdf', 'pptx','vnd.openxmlformats-officedocument.presentationml.presentation']
+        if type not in allowed_types:
+            raise NotImplementedError(f"Document type {type} not supported yet. Nees to be one of {', '.join(allowed_types)}")
 
     def _clean_text(self, text):
         """
@@ -84,7 +90,102 @@ class pdf:
     
         return '\n'.join(formatted_lines)
 
-    def get_sldies_text(self, rescale_image_max_dim=500):
+    def get_text(self, rescale_image_max_dim=500):
+        if self.doc_type == 'pdf':
+            return self.get_pdf_text(rescale_image_max_dim)
+        elif self.doc_type in ['pptx', 'vnd.openxmlformats-officedocument.presentationml.presentation']:
+            return self.get_pptx_text(rescale_image_max_dim)
+        else:
+            return None
+
+    def get_pptx_text(self, rescale_image_max_dim=500):
+        """
+        Extended version that also extracts table content and speaker notes.
+        """
+        extracted_text = ""
+        images = []
+        image_cnt = 0
+        
+        prs = Presentation(self.doc)
+        
+        for slide_num, slide in enumerate(tqdm(prs.slides, desc="Processing slides")):
+            slide_text = ""
+            
+            # Extract text from all shapes
+            for shape in slide.shapes:
+                # Text boxes and title/content placeholders
+                if hasattr(shape, "text_frame") and shape.text_frame.text.strip():
+                    shape_text = _extract_text_with_hyperlinks(shape.text_frame)
+                    if shape_text.strip():
+                        slide_text += shape_text + "\n"
+                elif hasattr(shape, "text") and shape.text.strip():
+                    slide_text += shape.text + "\n"
+                
+                
+                # Tables
+                elif hasattr(shape, "table"):
+                    table_text = "\n**Table:**\n"
+                    for row in shape.table.rows:
+                        row_text = " | ".join([cell.text.strip() for cell in row.cells])
+                        table_text += f"| {row_text} |\n"
+                    slide_text += table_text + "\n"
+            
+            # Extract speaker notes if available
+            if slide.notes_slide and slide.notes_slide.notes_text_frame:
+                notes_text = slide.notes_slide.notes_text_frame.text.strip()
+                if notes_text:
+                    slide_text += f"\n**Speaker Notes:**\n{notes_text}\n"
+            
+            # Clean and format the text
+            cleaned_text = self._clean_text(slide_text)
+            markdown_text = self._slides_format_as_markdown(cleaned_text)
+            
+            if slide_text.strip():
+                extracted_text += f"<slide number={slide_num+1}>{markdown_text}"
+            
+            # Extract images
+            for shape in slide.shapes:
+                if shape.shape_type == 13:  # Picture shape type
+                    #try:
+                    if True:
+                        image_part = shape.image.blob
+                        img = Image.open(io.BytesIO(image_part))
+                        if img.format in ['WMF', 'EMF']:
+                            # Skip WMF/EMF files that PIL can't handle
+                            continue
+                        
+                        # Resize logic (same as before)
+                        w, h = img.width, img.height
+                        if np.max([w, h]) > rescale_image_max_dim:
+                            scale = np.max([w, h]) / rescale_image_max_dim
+                            img_resized = img.resize((int(w/scale), int(h/scale)))
+                        else:
+                            img_resized = img
+                        
+                        buffered = io.BytesIO()
+                        img_format = img.format if img.format else 'PNG'
+                        img_resized.save(buffered, format=img_format)
+                        
+                        images.append({
+                            "slide": slide_num + 1,
+                            "img": img,
+                            "data": base64.b64encode(buffered.getvalue()).decode('utf-8')
+                        })
+                        
+                        image_cnt += 1
+                        extracted_text += f"[Image{image_cnt}]"
+                        
+                    #except Exception as e:
+                    #    continue
+            
+            extracted_text += "</slide>\n"
+        
+        self.text = extracted_text
+        self.images = images
+        return extracted_text, images
+
+
+    def get_pdf_text(self, rescale_image_max_dim=500):
         """
         Returns a string of extracted content for slide like pdf files. Images are indicated with [ImageX], a corresponding list with images is returned with PLI.Picture (orignal), and rescaled data64 for potential use with LLMs.
         
@@ -105,9 +206,24 @@ class pdf:
                 #    continue
                 crop_box = (0, 0, page.width, page.height *0.96)
                 text = page.crop(crop_box).extract_text()
-                cleaned_text = self._clean_text(text)
+
+                # Extract tables
+                tables = page.crop(crop_box).extract_tables()
+                table_text = ""
+                if tables:
+                    for table_idx, table in enumerate(tables):
+                        table_text += f"\n**Table {table_idx + 1}:**\n"
+                        for row in table:
+                            # Filter out None values and clean cells
+                            cleaned_row = [str(cell).strip() if cell else "" for cell in row]
+                            table_text += "| " + " | ".join(cleaned_row) + " |\n"
+                        table_text += "\n"
+
+                combined_text = text + table_text
+
+                cleaned_text = self._clean_text(combined_text)
                 markdown_text = self._slides_format_as_markdown(cleaned_text)
-                if text:
+                if combined_text.strip():
                     extracted_text += f"<page number={i+1}>{markdown_text}"
                     for img in page.images:
                         try:
@@ -154,7 +270,7 @@ class pdf:
             # Plot the image
             axes[i].imshow(img_array)
             axes[i].axis('off')  # Turn off axis labels
-            axes[i].set_title(f'Image {i+1}/page {img["page"]}')
+            axes[i].set_title(f'Image {i+1}/page {img["slide"]}')
             
         # Adjust the layout and display the plot
         plt.tight_layout()
@@ -390,3 +506,19 @@ def fix_json_quotes(text):
     
     return text
 
+def _extract_text_with_hyperlinks(text_frame):
+    """Extract text with hyperlinks in markdown format [text](url)"""
+    if not text_frame.text.strip():
+        return ""
+    
+    result_text = ""
+    for paragraph in text_frame.paragraphs:
+        paragraph_text = ""
+        for run in paragraph.runs:
+            if run.hyperlink and run.hyperlink.address:
+                paragraph_text += f"[{run.text}]({run.hyperlink.address})"
+            else:
+                paragraph_text += run.text
+        if paragraph_text.strip():
+            result_text += paragraph_text + "\n"
+    return result_text

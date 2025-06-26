@@ -14,4 +14,4 @@ if missing:
 
 from .utils import get_data_dir 
 from .docdb import docdb
-from .parser import pdf
+from .parsers import parser
