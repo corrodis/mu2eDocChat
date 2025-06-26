@@ -4,6 +4,7 @@ import numpy as np
 from pathlib import Path
 from dotenv import load_dotenv
 from .utils import get_data_dir, convert_to_timestamp, get_chroma_path
+from .docdb import docdb
 from .chunking import chunk_text_simple
 import sqlite3
 import threading
@@ -46,6 +47,8 @@ def saveInCollection(doc, collection=None, chunking_strategy="default"):
         base_meta['topics'] = ", ".join(base_meta['topics'])
     if 'keyword' in base_meta:
         base_meta['keyword'] = ", ".join(base_meta['keyword'])
+    if 'authors' in base_meta:
+        base_meta['authors'] = ", ".join(base_meta['authors'])
 
     documents_ = []
     metadatas_ = []

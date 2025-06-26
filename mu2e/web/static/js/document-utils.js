@@ -27,7 +27,7 @@ async function summarizeFile(docid, fileIndex) {
         
         // Update the summary in the DOM
         summaryElement.innerHTML = `
-            <strong>Summary:</strong> 
+            <strong>AI Summary:</strong> 
             <span style="color: #2c3e50;">${escapeHtml(summary)}</span>
         `;
         
