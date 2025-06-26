@@ -13,7 +13,7 @@ from mu2e.chat_mcp import MCPClient,Chat
 import json
 from datetime import datetime
 from mu2e.tools import getDefaultCollection, load2, getOpenAIClient, start_background_generate, get_last_generate_info
-from mu2e.search import search, search_fulltext
+from mu2e.search import search, search_fulltext, search_list
 from mu2e.utils import list_to_search_result, get_lof_dir
 from mu2e import docdb, anl
 import uuid
@@ -98,8 +98,7 @@ def search_api():
                                       n_results=n_results, 
                                       filters=filters)
         elif type == 'list':
-            db = docdb()
-            results = list_to_search_result(db.list_latest(days=n_results))
+            results = search_list(days=n_results)
 
         else:
             return jsonify({'error': 'Invalid search type'}), 400

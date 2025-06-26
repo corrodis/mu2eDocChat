@@ -84,7 +84,7 @@ def convert_to_timestamp(date_input: Union[str, datetime, int]) -> Optional[int]
     
     return None
 
-def list_to_search_result(docs):
+def list_to_search_result(docs, enhence=0):
     n_results = len(docs)
     
     # Extract basic fields
@@ -98,37 +98,52 @@ def list_to_search_result(docs):
         doc_id = doc.get('doc_id', f"mu2e-docdb-{doc.get('id', '')}")
         ids.append(f"{doc_id}")
         
-        # Convert datetime to timestamp if present
-        last_updated = doc.get('last_updated')
-        if last_updated:
-            timestamp = int(last_updated.timestamp())
-        else:
-            timestamp = 0
-        
-        # Build metadata dictionary
-        meta = {
-            'created_timestamp': timestamp,
-            'revised_timestamp': timestamp,
-            'revised_meta': last_updated.strftime('%d %b %Y, %H:%M') if last_updated else '',
-            'version': 1,
-            'title': doc.get('tite', doc.get('title', '')),
-            'created': last_updated.strftime('%d %b %Y, %H:%M') if last_updated else '',
-            'docid_str': f"Mu2e-doc-{doc.get('id', '')}-v1",
-            'doc_id': doc.get('doc_id', ''),
-            'abstract': '',  # Not available in source format
-            'topics': ', '.join(doc.get('topics', [])),
-            'revised_content': last_updated.strftime('%d %b %Y, %H:%M') if last_updated else '',
-            'link': doc.get('link:', ''),
-            'doc_type': 'mu2e-docdb',
-            'filename': doc.get('filename:', ''),
-        }
-        
+        doc = None
+        if enhence > 0:
+            from .tools import load2
+            doc = load2(doc_id, nodb=True)
+            meta = {k: v for k, v in doc.items() if k != 'files'}
+
+            text = ""
+            if enhence > 1: # also add the content
+                if 'files' in doc:
+                    for file in doc['files']:
+                        text +=  "File: " + file['filename'] + ": " + file['text']
+            documents.append(text)
+
+        if not doc: # stick to what we get from the list 
+            # Convert datetime to timestamp if present
+            last_updated = doc.get('last_updated')
+            if last_updated:
+                timestamp = int(last_updated.timestamp())
+            else:
+                timestamp = 0
+            
+            # Build metadata dictionary
+            meta = {
+                'created_timestamp': timestamp,
+                'revised_timestamp': timestamp,
+                'revised_meta': last_updated.strftime('%d %b %Y, %H:%M') if last_updated else '',
+                'version': 1,
+                'title': doc.get('tite', doc.get('title', '')),
+                'created': last_updated.strftime('%d %b %Y, %H:%M') if last_updated else '',
+                'docid_str': f"Mu2e-doc-{doc.get('id', '')}-v1",
+                'doc_id': doc.get('doc_id', ''),
+                'abstract': '',  # Not available in source format
+                'topics': ', '.join(doc.get('topics', [])),
+                'revised_content': last_updated.strftime('%d %b %Y, %H:%M') if last_updated else '',
+                'link': doc.get('link:', ''),
+                'doc_type': 'mu2e-docdb',
+                'filename': doc.get('filename:', ''),
+            }
+            
         metadata.append(meta)
+        documents.append('')
     
     return {
         'query': 'list',
         'n_results': n_results,
-        'documents': ['']*n_results,
+        'documents': documents,
         'distances': [1.0]*n_results,  # Ensure same length
         'ids': ids,
         'metadata': metadata

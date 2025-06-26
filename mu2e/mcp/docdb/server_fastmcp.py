@@ -82,12 +82,14 @@ def get_app_context() -> AppContext:
 
 @mcp.tool()
 async def list(
-    days: int = Field(description="Number of the last n days from which documents are returned.")
+    days: int = Field(description="Number of the last n days from which documents are returned."),
+    include_documents : bool = Field(description="If true (default), the response contains the document content.", default=True)
 ) -> str:
     """List all documents from the last n days from the docdb."""
     from mu2e.mcp.docdb.tools.list_tool import handle_list_tool
     
-    arguments = {"days": days}
+    arguments = {"days": days, 
+                 "include_documents": include_documents}
     results = await handle_list_tool(arguments, get_db())
     return results[0].text
 

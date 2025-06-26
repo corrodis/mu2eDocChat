@@ -4,7 +4,8 @@ Search and retrieval interface for ChromaDB collections with filtering capabilit
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Union
 from .tools import getDefaultCollection
-from .utils import convert_to_timestamp
+from .utils import convert_to_timestamp, list_to_search_result
+from .docdb import docdb
 
 
 def search(
@@ -165,6 +166,13 @@ def search_by_date(
         date_range=date_range,
         **kwargs
     )
+
+def search_list(days=1, enhence=2, db=None):
+    if not db:
+        db = docdb()
+    return list_to_search_result(
+            db.list_latest(days=days),
+            enhence=enhence)
 
 
 def _build_where_clause(
