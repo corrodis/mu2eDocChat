@@ -489,6 +489,8 @@ class docdb:
                 doc_ = tools.load2("mu2e-docdb-"+str(doc['id']), nodb=True, collection=self.collection) # check if we already have this cached
                 if not doc_ is None:
                     print("mu2e-docdb-"+str(doc['id'])+" - present")
+                else:
+                    print("mu2e-docdb-"+str(doc['id'])+" - get, parse, store...")
             if doc_ is None:
                 self.get_parse_store(doc['id'], save_raw=save_raw, add_image_descriptions=add_image_descriptions)
             

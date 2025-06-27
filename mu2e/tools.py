@@ -102,6 +102,11 @@ def saveInCollection(doc, collection=None, chunking_strategy="default"):
         print(f"{docid} has no documents/chunks to store")
         return 
     
+    if len(ids_) > 1000:
+        print(f"{len(ids_)} chunks - thats more than {1000}, that doesn't sound right: {docid}")
+        ids_ = ids_[:1000]
+        metadatas_ = metadatas_[:1000]
+        documents_ = documents_[:1000]
     print(f"Storing {len(ids_)} chunks for document {docid}")
     collection.upsert(
         documents=documents_,
