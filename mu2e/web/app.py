@@ -11,9 +11,9 @@ from flask_socketio import SocketIO, emit
 import logging
 from mu2e.chat_mcp import MCPClient,Chat
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from mu2e.tools import load2, getOpenAIClient, start_background_generate, get_last_generate_info
-from mu2e.search import search, search_fulltext, search_list
+from mu2e.search import search, search_fulltext, search_list, parse_web_filters
 from mu2e.utils import list_to_search_result, get_log_dir
 from mu2e.collections import get_collection, collection_names
 from mu2e import docdb, collections
@@ -77,7 +77,8 @@ def search_api():
         query = data.get('query', '')
         n_results = data.get('n_results', 5)
         filters = data.get('filters', None)
-        #date_range = data.get('date_range', None)
+        date_after = data.get('date_after', None)
+        date_before = data.get('date_before', None)
         search_id = str(uuid.uuid4())
 
         if type != 'list' and not query:
@@ -85,24 +86,48 @@ def search_api():
         
         collection = get_collection(collection_name)
 
-        print(type)
+        # Parse filters if provided
+        parsed_filters = None
+        if filters and isinstance(filters, str):
+            try:
+                # Try to parse as JSON (from LLM auto-extraction)
+                parsed_filters = json.loads(filters)
+            except json.JSONDecodeError:
+                # Fall back to manual parsing if not JSON
+                parsed = parse_web_filters(filters)
+                parsed_filters = parsed['filters']
+        elif filters:
+            parsed_filters = filters
+        
+        # Build date range from separate fields
+        date_range = None
+        if date_after or date_before:
+            date_range = {}
+            if date_after:
+                date_range['start'] = date_after
+            if date_before:
+                date_range['end'] = date_before
+
+        #print(type)
         if type == 'search':
             results = search(query, 
                             collection=collection,
                             n_results=n_results, 
-                            filters=filters)
+                            filters=parsed_filters,
+                            date_range=date_range)
         elif type == 'fulltext':
             results = search_fulltext(query, 
                                       collection=collection,
                                       n_results=n_results, 
-                                      filters=filters)
+                                      filters=parsed_filters,
+                                      date_range=date_range)
         elif type == 'list':
             results = search_list(days=n_results, enhence=2)
 
         else:
             return jsonify({'error': 'Invalid search type'}), 400
         
-        print(results)
+        #print(results)
         log_search_interaction(search_id, data, results)
         results["search_id"] = search_id
         return results
@@ -157,7 +182,7 @@ def get_document_summary(docid):
             messages=[{"role": "system", "content": instructions},
                       {"role": "user", "content": content}]
         )
-        print(response)
+        #print(response)
         return jsonify(response.choices[0].message.content)
     
     except Exception as e:
@@ -171,6 +196,90 @@ def get_generate_info():
         return jsonify(info)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/extract-filters', methods=['POST'])
+def extract_filters():
+    """Extract search filters from natural language query using LLM"""
+    try:
+        data = request.get_json()
+        query = data.get('query', '').strip()
+        
+        if not query:
+            return jsonify({'filters': None})
+        
+        # Use OpenAI client to extract filters
+        client = getOpenAIClient()
+        
+        prompt = f"""Extract search filters and dates from the following query. Focus ONLY on:
+1. Author names 
+2. Date ranges (return as YYYY-MM-DD format for date pickers)
+3. Very clear title/abstract keywords (only if **very** obvious)
+
+DO NOT include dates in the ChromaDB filter - return them separately.
+
+Examples:
+- "Smith's meeting notes from 2024" → 
+  {{"filters": null, "dateAfter": "2024-01-01", "dateBefore": null}}
+  
+- "documents by Johnson from June 2024" → 
+  {{"filters": {{"authors": "Johnson"}}, "dateAfter": "2024-06-01", "dateBefore": "2024-06-30"}}
+  
+- "recent DAQ papers" → 
+  {{"filters": null, "dateAfter": "2024-01-01", "dateBefore": null}}
+  
+- "Anderson's work" → 
+  {{"filters": {{"authors": "Anderson"}}, "dateAfter": null, "dateBefore": null}}
+
+  - "Documents with the exact title 'example ABC'" → 
+  {{"filters": {{"title": "example ABC"}}, "dateAfter": null, "dateBefore": null}}
+
+  - "CRV cosmic ray run configuration, documents between June and August 2024"
+  {{"filters": null "dateAfter": "2024-06-01", "dateBefore": "2024-08-31"}}
+
+Date context: today is {datetime.now().strftime('%Y-%m-%d')}. "Recent" means last 6 months.
+
+Query: "{query}"
+
+Return ONLY the JSON object with "filters", "dateAfter", "dateBefore" fields (null if not applicable). Do not use markdown formatting or code blocks:"""
+
+        response = client.chat.completions.create(
+            model=os.getenv('MU2E_WEB_SUMMARY_MODEL', os.getenv('MU2E_CHAT_MODEL', 'argo:gpt-4o')),
+            messages=[
+                {"role": "system", "content": "You are a search filter extraction assistant. Extract only clear, unambiguous filters from queries."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=100,
+            temperature=0.1
+        )
+        
+        extracted = response.choices[0].message.content.strip()
+        print("DEBUG",extracted)
+        
+        # Return extracted data or None
+        if extracted.lower() in ['none', 'no filters', '']:
+            return jsonify({'filters': None, 'dateAfter': None, 'dateBefore': None})
+        else:
+            try:
+                # Try to parse as JSON to validate
+                extracted_json = json.loads(extracted)
+                
+                # Extract filters as string for the frontend
+                filters_str = None
+                if extracted_json.get('filters'):
+                    filters_str = json.dumps(extracted_json['filters'])
+                
+                return jsonify({
+                    'filters': filters_str,
+                    'dateAfter': extracted_json.get('dateAfter'),
+                    'dateBefore': extracted_json.get('dateBefore')
+                })
+            except json.JSONDecodeError:
+                # If not valid JSON, return None
+                return jsonify({'filters': None, 'dateAfter': None, 'dateBefore': None})
+            
+    except Exception as e:
+        print(f"Filter extraction error: {e}")
+        return jsonify({'filters': None, 'dateAfter': None, 'dateBefore': None})
 
 @app.route('/api/generate', methods=['POST'])
 def trigger_generate():
@@ -221,6 +330,7 @@ def handle_start_chat(data):
     try:
         session_id = data.get('session_id')
         doc_id = data.get('doc_id')
+        search_context = data.get('search_context')
         
         if not session_id:
             emit('error', {'message': 'Session ID is required'})
@@ -228,7 +338,21 @@ def handle_start_chat(data):
         
         # Prepare user context
         user_context = {}
-        if doc_id:
+        if search_context:
+            # Handle search results context
+            user_context = {
+                'interface': "web",
+                'search_query': search_context.get('search_query'),
+                'results_count': search_context.get('results_count'),
+                'document_title': search_context.get('title'),
+                'document_content': search_context.get('content', ''),
+                'document_url': '',
+                'document_files': search_context.get('files', []),
+                'document_date': None,
+                'document_context': f"User is asking about search results for '{search_context.get('search_query')}'. The search returned {search_context.get('results_count')} relevant documents with abstracts and content snippets."
+            }
+            #print("Search context:", user_context)
+        elif doc_id:
             # Load document to provide context
             doc = load2(doc_id, nodb=True)
             user_context = {
@@ -247,7 +371,7 @@ def handle_start_chat(data):
                 'document_date': doc.revised_content.get('date') if hasattr(doc, 'revised_content') and doc.revised_content else None,
                 'document_context': f"User is asking about document: {doc.get('title', 'Unknown')} (ID: {doc_id}). The document contains {len(doc.get('files', []))} file(s)."
             }
-            print(user_context)
+            #print(user_context)
         
         # Create new chat instance
         chat = Chat(user_context=user_context)

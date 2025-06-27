@@ -10,24 +10,78 @@
 <div class="card">
     <h2>Mu2e DocDB Search</h2>
     
+    <div class="input-group" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 500; color: #495057;">
+                <input type="radio" name="searchType" id="searchType-semantic" value="search" checked>
+                Semantic Search
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 500; color: #495057;">
+                <input type="radio" name="searchType" id="searchType-fulltext" value="fulltext">
+                Full-text Search
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 500; color: #495057;">
+                <input type="radio" name="searchType" id="searchType-list" value="list">
+                List Recent
+            </label>
+
+        </div>
+        
+        <div id="searchTypeGroup" style="display: flex; gap: 1.5rem; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <label for="collection" style="font-weight: 600; color: #495057; min-width: 80px;">Collection:</label>
+                <select id="collection" style="padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px;">
+                    {% for collection in collection_names %}
+                    <option value="{{ collection }}"{% if collection == 'default' %} selected{% endif %}>{{ collection.title() }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <label for="n_results" style="font-weight: 600; color: #495057; min-width: 60px;">Number of Results:</label>
+                <input type="number" id="n_results" placeholder="n" value="10" style="width: 100px; padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px;">
+            </div>
+        </div>
+    </div>
 
     <div class="input-group">
-        <select id="collection">
-            {% for collection in collection_names %}
-            <option value="{{ collection }}"{% if collection == 'default' %} selected{% endif %}>{{ collection.title() }}</option>
-            {% endfor %}
-        </select>
-        <select id="searchType">
-            <option value="search">Semantic Search</option>
-            <option value="fulltext">Full-text Search</option>
-            <option value="list">List Recent</option>
-        </select>
+
         <input type="text" id="searchQuery" placeholder="Enter search query..." class="flex-1">
         <button onclick="performSearch()" class="btn">Search</button>
     </div>
     <div class="input-group">
-        <input type="text" id="filter" placeholder="Filter" class="flex-1" value="">
-        <input type="number" id="n_results"  placeholder="n" value="10" style="width: 100px;">
+        <button onclick="toggleFilterHelp()" class="btn-small" style="margin-left: 0.5rem;">?</button>
+        <input type="text" id="filter" placeholder="Auto-extracted filters (authors, title, etc.) will appear here..." class="flex-1" value="">
+        
+        <label for="dateAfter" style="font-weight: normal; color: #6c757d; min-width: 80px;">After:
+            <input type="date" id="dateAfter" style="padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px; color: #6c757d;" placeholder="After">
+        </label>
+        <label for="dateBefore" style="font-weight: normal; color: #6c757d; min-width: 80px; margin-left: 1rem;">Before:
+            <input type="date" id="dateBefore" style="padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px; color: #6c757d;">
+        </label>
+        <!--<button onclick="clearDates()" class="btn-small" style="margin-left: 0.5rem;">Clear Dates</button>-->
+        <label style="display: flex; align-items: center; gap: 0.5rem; margin-left: 0.5rem; font-weight: 500; color: #495057;">
+            <input type="checkbox" id="autoFilter" checked>
+            Auto-extract
+        </label>
+    </div>
+    
+    <div id="filter-help" style="display: none; background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-bottom: 1rem; font-size: 0.9rem;">
+        <strong>Filter Examples (No Dates - Use Date Pickers Above):</strong><br>
+        <div style="margin: 0.5rem 0;"><strong>Basic Filters:</strong></div>
+        • <code>{"authors": {"$eq": "Smith"}}</code> - Documents by Smith<br>
+        • <code>{"title": {"$eq": "meeting"}}</code> - Documents with "meeting" in title<br>
+        • <code>{"topics": {"$eq": "DAQ"}}</code> - Documents about DAQ<br>
+        • <code>{"docid": {"$eq": 12345}}</code> - Specific document ID<br>
+        
+        <div style="margin: 0.5rem 0;"><strong>Combined Filters:</strong></div>
+        • <code>{"$and": [{"authors": {"$eq": "Smith"}}, {"title": {"$eq": "meeting"}}]}</code><br>
+        
+        <div style="margin: 0.5rem 0;"><strong>Quick Examples:</strong></div>
+        • <button onclick="setFilterExample('{&quot;authors&quot;: &quot;Smith&quot;}')" class="btn-small">Author: Smith</button>
+        • <button onclick="setFilterExample('{&quot;title&quot;: &quot;meeting&quot;}')" class="btn-small">Title: meeting</button>
+        • <button onclick="setFilterExample('{&quot;topics&quot;: &quot;DAQ&quot;}')" class="btn-small">Topic: DAQ</button><br>
+        
+        <em>Note: Use auto-extract for natural language, or enter ChromaDB JSON syntax manually. Dates are handled separately above. Filters perform exact matches on metadata fields.</em>
     </div>
     
     
@@ -48,17 +102,53 @@
 let currentQuery = '';
 let currentSessionId = null;
 
-function performSearch() {
-    const searchType = document.getElementById('searchType').value;
+async function performSearch() {
+    const searchType = document.querySelector('input[name="searchType"]:checked').value;
     const query = document.getElementById('searchQuery').value.trim();
     const collection = document.getElementById('collection').value;
     const n_results = parseInt(document.getElementById('n_results').value);
-    const filter = document.getElementById('filter').value;
+    let filter = document.getElementById('filter').value;
+    const autoFilter = document.getElementById('autoFilter').checked;
     
     if (!query && searchType !== 'list') {
         showError('Please enter a search query');
         return;
     }
+    
+    // Auto-extract filters if enabled and we have a query
+    if (autoFilter && query && searchType !== 'list') {
+        try {
+            // Clear existing fields first
+            document.getElementById('filter').value = '';
+            document.getElementById('dateAfter').value = '';
+            document.getElementById('dateBefore').value = '';
+            filter = '';
+            
+            const extractedData = await extractFiltersFromQuery(query);
+            if (extractedData) {
+                // Set extracted filters in the filter box
+                if (extractedData.filters) {
+                    document.getElementById('filter').value = extractedData.filters;
+                    //Disable for the moment, too many errors
+                    //filter = extractedData.filters;
+                }
+                // Set extracted dates in the date fields
+                if (extractedData.dateAfter) {
+                    document.getElementById('dateAfter').value = extractedData.dateAfter;
+                }
+                if (extractedData.dateBefore) {
+                    document.getElementById('dateBefore').value = extractedData.dateBefore;
+                }
+            }
+        } catch (error) {
+            console.warn('Filter extraction failed:', error);
+            // Continue with search even if filter extraction fails
+        }
+    }
+    
+    // Get date range values
+    const dateAfter = document.getElementById('dateAfter').value;
+    const dateBefore = document.getElementById('dateBefore').value;
     
     currentQuery = query;
     
@@ -75,7 +165,9 @@ function performSearch() {
         query: query,
         collection: collection,
         n_results: n_results,
-        filters: filter
+        filters: filter,
+        date_after: dateAfter,
+        date_before: dateBefore
     };
     
     if (searchType === 'list') {
@@ -119,90 +211,114 @@ function displayResults(data, query) {
         return;
     }
     
-    let html = `<h3>Search Results (${data.ids.length} found)</h3>`;
-
-console.log(data);
-
-for (let idx = 0; idx < data.ids.length; idx++) {
-    const hasLongContent = (data.documents[idx] && data.documents[idx].length > 100) || 
-                          (data.metadata[idx].abstract && data.metadata[idx].abstract.length > 100);
+    // Store original data for sorting
+    window.currentSearchData = data;
+    window.currentQuery = query;
     
-    html += `
-        <div class="result-item">
-            <h4>${escapeHtml(data.metadata[idx].title || 'Untitled Document')}</h4>
-            <div class="meta">
-                ${data.metadata[idx].doc_id || 'N/A'} | 
-                Distance: ${data.distances[idx] ? parseFloat(data.distances[idx].toFixed(3)) : 'N/A'} |
-                Date: ${data.metadata[idx].revised_content || 'N/A'} | 
-                Filename: ${data.metadata[idx].filename|| 'N/A'}
-            </div>
-            
-            <div class="content">
-                ${data.metadata[idx].abstract ? `
-                    <div style="margin-bottom: 0.5rem;">
-                        <strong>Abstract:</strong> ${escapeHtml(data.metadata[idx].abstract)}
-                    </div>
-                ` : ''}
-                ${hasLongContent ? `
-                    <div id="summary-content-${idx}">
-                        <strong>AI Summary:</strong> <span class="summary-loading" style="color: #666; font-style: italic;">Generating summary...</span>
-                    </div>
-                ` : `
-                    ${!data.metadata[idx].abstract ? escapeHtml(data.documents[idx] || 'No content available').substring(0, 300) : ''}${(!data.metadata[idx].abstract && (data.documents[idx] || '').length > 300) ? '...' : ''}
-                `}
-            </div>
-            
-            <div class="actions">
-                <a href="#" onclick="log('${idx}','view'); viewDocument('${data.metadata[idx].doc_id}')">View Details</a>
-                ${data.metadata[idx].doc_id ? `<a href="${data.metadata[idx].link}" target="_blank" onclick="log('${idx}','docdb');">Open in DocDB</a>` : ''}
-                <a href="#" onclick="log('${idx}','chat'); startChatWithDocument('${data.metadata[idx].doc_id}')">Chat</a>
+    // Filter duplicates by doc_id and keep the best (lowest distance) result for each document
+    const uniqueResults = {};
+    for (let i = 0; i < data.ids.length; i++) {
+        const docId = data.metadata[i].doc_id;
+        const distance = data.distances[i];
+        
+        if (!uniqueResults[docId] || distance < uniqueResults[docId].distance) {
+            uniqueResults[docId] = {
+                index: i,
+                distance: distance,
+                metadata: data.metadata[i],
+                document: data.documents[i]
+            };
+        }
+    }
+    
+    // Convert back to arrays for display
+    const filteredData = {
+        ids: [],
+        distances: [],
+        metadata: [],
+        documents: []
+    };
+    
+    Object.values(uniqueResults).forEach(result => {
+        filteredData.ids.push(data.ids[result.index]);
+        filteredData.distances.push(result.distance);
+        filteredData.metadata.push(result.metadata);
+        filteredData.documents.push(result.document);
+    });
+    
+    let html = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3>Search Results (${filteredData.ids.length} unique documents)</h3>
+            <div>
+                <button onclick="sortResults('relevance')" class="btn-small" id="sort-relevance" style="font-weight:bold;">Sort by Relevance</button>
+                <button onclick="sortResults('date')" class="btn-small" id="sort-date">Sort by Date</button>
+                <button onclick="startChatWithSearchResults()" class="btn-small" style="background: #27ae60; color: white;">Chat with Results</button>
             </div>
         </div>
     `;
+
+    // Render filtered results
+    renderResults(filteredData, html);
 }
 
-// Set the HTML first
-document.getElementById('search-results').innerHTML = html;
+function renderResults(data, htmlPrefix = '') {
+    const resultsDiv = document.getElementById('search-results');
+    let html = htmlPrefix;
 
-// Then start async summarization for items with long content
-for (let idx = 0; idx < data.ids.length; idx++) {
-    const hasLongContent = (data.documents[idx] && data.documents[idx].length > 100) || 
-                          (data.metadata[idx].abstract && data.metadata[idx].abstract.length > 100);
-    
-    if (hasLongContent && data.metadata[idx].doc_id) {
-        // Find the file index for this content - you might need to adjust this logic
-        // based on how your data is structured
-        summarizeSearchResult(data.metadata[idx].doc_id, idx, 0, query); // assuming file index 0 for search results
-    }
-}
+    console.log(data);
 
-// Add some CSS for the toggle button
-const style = document.createElement('style');
-style.textContent = `
-    .btn-small {
-        background-color: #f8f9fa;
-        border: 1px solid #dee2e6;
-        color: #495057;
-        cursor: pointer;
-        border-radius: 3px;
-        transition: background-color 0.2s;
+    for (let idx = 0; idx < data.ids.length; idx++) {
+        const hasLongContent = (data.documents[idx] && data.documents[idx].length > 100) || 
+                              (data.metadata[idx].abstract && data.metadata[idx].abstract.length > 100);
+        
+        html += `
+            <div class="result-item">
+                <h4>${escapeHtml(data.metadata[idx].title || 'Untitled Document')}</h4>
+                <div class="meta">
+                    ${data.metadata[idx].doc_id || 'N/A'} | 
+                    Distance: ${data.distances[idx] ? parseFloat(data.distances[idx].toFixed(3)) : 'N/A'} |
+                    Date: ${data.metadata[idx].revised_content || 'N/A'} | 
+                    Filename: ${data.metadata[idx].filename|| 'N/A'}
+                </div>
+                
+                <div class="content">
+                    ${data.metadata[idx].abstract ? `
+                        <div style="margin-bottom: 0.5rem;">
+                            <strong>Abstract:</strong> ${escapeHtml(data.metadata[idx].abstract)}
+                        </div>
+                    ` : ''}
+                    ${hasLongContent ? `
+                        <div id="summary-content-${idx}">
+                            <strong>AI Summary:</strong> <span class="summary-loading" style="color: #666; font-style: italic;">Generating summary...</span>
+                        </div>
+                    ` : `
+                        ${!data.metadata[idx].abstract ? escapeHtml(data.documents[idx] || 'No content available').substring(0, 300) : ''}${(!data.metadata[idx].abstract && (data.documents[idx] || '').length > 300) ? '...' : ''}
+                    `}
+                </div>
+                
+                <div class="actions">
+                    <a href="#" onclick="log('${idx}','view'); viewDocument('${data.metadata[idx].doc_id}')">View Details</a>
+                    ${data.metadata[idx].doc_id ? `<a href="${data.metadata[idx].link}" target="_blank" onclick="log('${idx}','docdb');">Open in DocDB</a>` : ''}
+                    <a href="#" onclick="log('${idx}','chat'); startChatWithDocument('${data.metadata[idx].doc_id}')">Chat</a>
+                </div>
+            </div>
+        `;
     }
-    
-    .btn-small:hover {
-        background-color: #e9ecef;
+
+    // Set the HTML first
+    document.getElementById('search-results').innerHTML = html;
+
+    // Then start async summarization for items with long content
+    for (let idx = 0; idx < data.ids.length; idx++) {
+        const hasLongContent = (data.documents[idx] && data.documents[idx].length > 100) || 
+                              (data.metadata[idx].abstract && data.metadata[idx].abstract.length > 100);
+        
+        if (hasLongContent && data.metadata[idx].doc_id) {
+            // Find the file index for this content - you might need to adjust this logic
+            // based on how your data is structured
+            summarizeSearchResult(data.metadata[idx].doc_id, idx, 0, window.currentQuery || ''); // assuming file index 0 for search results
+        }
     }
-    
-    .summary-loading {
-        animation: pulse 1.5s infinite;
-    }
-    
-    @keyframes pulse {
-        0% { opacity: 1; }
-        50% { opacity: 0.5; }
-        100% { opacity: 1; }
-    }
-`;
-document.head.appendChild(style);
 }
 
 async function log(result_id, type) {
@@ -362,6 +478,242 @@ function backToResults() {
     document.getElementById('document-details').style.display = 'none';
     document.getElementById('search-results').style.display = 'block';
 }
+
+// Function to sort search results
+function sortResults(sortType) {
+    if (!window.currentSearchData) return;
+    
+    const data = window.currentSearchData;
+    
+    // Filter duplicates again (same logic as displayResults)
+    const uniqueResults = {};
+    for (let i = 0; i < data.ids.length; i++) {
+        const docId = data.metadata[i].doc_id;
+        const distance = data.distances[i];
+        
+        if (!uniqueResults[docId] || distance < uniqueResults[docId].distance) {
+            uniqueResults[docId] = {
+                index: i,
+                distance: distance,
+                metadata: data.metadata[i],
+                document: data.documents[i]
+            };
+        }
+    }
+    
+    // Convert to array for sorting
+    let resultsArray = Object.values(uniqueResults);
+    
+    // Sort based on type
+    if (sortType === 'date') {
+        resultsArray.sort((a, b) => {
+            const dateA = new Date(a.metadata.revised_timestamp || a.metadata.created_timestamp || 0);
+            const dateB = new Date(b.metadata.revised_timestamp || b.metadata.created_timestamp || 0);
+            return dateB - dateA; // Newest first
+        });
+        // Update button states
+        document.getElementById('sort-date').style.fontWeight = 'bold';
+        document.getElementById('sort-relevance').style.fontWeight = 'normal';
+    } else {
+        resultsArray.sort((a, b) => a.distance - b.distance); // Best relevance (lowest distance) first
+        // Update button states
+        document.getElementById('sort-relevance').style.fontWeight = 'bold';
+        document.getElementById('sort-date').style.fontWeight = 'normal';
+    }
+    
+    // Convert back to arrays for display
+    const sortedData = {
+        ids: [],
+        distances: [],
+        metadata: [],
+        documents: []
+    };
+    
+    resultsArray.forEach(result => {
+        sortedData.ids.push(data.ids[result.index]);
+        sortedData.distances.push(result.distance);
+        sortedData.metadata.push(result.metadata);
+        sortedData.documents.push(result.document);
+    });
+    
+    // Re-render just the results (header stays the same)
+    renderResultsOnly(sortedData);
+}
+
+// Function to render only the result items (without header)
+function renderResultsOnly(data) {
+    const resultsDiv = document.getElementById('search-results');
+    const header = resultsDiv.querySelector('div[style*="display: flex"]'); // Find the header
+    
+    let html = '';
+    for (let idx = 0; idx < data.ids.length; idx++) {
+        const hasLongContent = (data.documents[idx] && data.documents[idx].length > 100) || 
+                              (data.metadata[idx].abstract && data.metadata[idx].abstract.length > 100);
+        
+        html += `
+            <div class="result-item">
+                <h4>${escapeHtml(data.metadata[idx].title || 'Untitled Document')}</h4>
+                <div class="meta">
+                    ${data.metadata[idx].doc_id || 'N/A'} | 
+                    Distance: ${data.distances[idx] ? parseFloat(data.distances[idx].toFixed(3)) : 'N/A'} |
+                    Date: ${data.metadata[idx].revised_content || 'N/A'} | 
+                    Filename: ${data.metadata[idx].filename|| 'N/A'}
+                </div>
+                
+                <div class="content">
+                    ${data.metadata[idx].abstract ? `
+                        <div style="margin-bottom: 0.5rem;">
+                            <strong>Abstract:</strong> ${escapeHtml(data.metadata[idx].abstract)}
+                        </div>
+                    ` : ''}
+                    ${hasLongContent ? `
+                        <div id="summary-content-${idx}">
+                            <strong>AI Summary:</strong> <span class="summary-loading" style="color: #666; font-style: italic;">Generating summary...</span>
+                        </div>
+                    ` : `
+                        ${!data.metadata[idx].abstract ? escapeHtml(data.documents[idx] || 'No content available').substring(0, 300) : ''}${(!data.metadata[idx].abstract && (data.documents[idx] || '').length > 300) ? '...' : ''}
+                    `}
+                </div>
+                
+                <div class="actions">
+                    <a href="#" onclick="log('${idx}','view'); viewDocument('${data.metadata[idx].doc_id}')">View Details</a>
+                    ${data.metadata[idx].doc_id ? `<a href="${data.metadata[idx].link}" target="_blank" onclick="log('${idx}','docdb');">Open in DocDB</a>` : ''}
+                    <a href="#" onclick="log('${idx}','chat'); startChatWithDocument('${data.metadata[idx].doc_id}')">Chat</a>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Keep the header and replace only the results
+    if (header) {
+        resultsDiv.innerHTML = header.outerHTML + html;
+    } else {
+        resultsDiv.innerHTML = html;
+    }
+    
+    // Restart summarization for the re-rendered results
+    for (let idx = 0; idx < data.ids.length; idx++) {
+        const hasLongContent = (data.documents[idx] && data.documents[idx].length > 100) || 
+                              (data.metadata[idx].abstract && data.metadata[idx].abstract.length > 100);
+        
+        if (hasLongContent && data.metadata[idx].doc_id) {
+            summarizeSearchResult(data.metadata[idx].doc_id, idx, 0, window.currentQuery || '');
+        }
+    }
+}
+
+// Function to start chat with search results context
+function startChatWithSearchResults() {
+    if (!window.currentSearchData || !window.currentQuery) {
+        showError('No search results available for chat');
+        return;
+    }
+    
+    // Get the currently displayed filtered results (same logic as displayResults)
+    const data = window.currentSearchData;
+    const uniqueResults = {};
+    for (let i = 0; i < data.ids.length; i++) {
+        const docId = data.metadata[i].doc_id;
+        const distance = data.distances[i];
+        
+        if (!uniqueResults[docId] || distance < uniqueResults[docId].distance) {
+            uniqueResults[docId] = {
+                index: i,
+                distance: distance,
+                metadata: data.metadata[i],
+                document: data.documents[i]
+            };
+        }
+    }
+    
+    // Convert to arrays for processing
+    const filteredResults = Object.values(uniqueResults);
+    
+    // Format filtered search results as document content
+    const searchResultsContent = filteredResults.map((result) => {
+        const snippet = result.document?.substring(0, 500) || '';
+        return `**Document: ${result.metadata.title || 'Untitled'}** (ID: ${result.metadata.doc_id})
+**Date:** ${result.metadata.revised_content || 'N/A'}
+**Abstract:** ${result.metadata.abstract || 'No abstract available'}
+**Content snippet:** ${snippet}
+**Relevance score:** ${result.distance?.toFixed(3) || 'N/A'}
+---`;
+    }).join('\n\n');
+    
+    // Create search results context
+    const searchContext = {
+        search_query: window.currentQuery,
+        results_count: filteredResults.length,
+        total_chunks: data.metadata.length,
+        title: `Search Results for: "${window.currentQuery}"`,
+        content: searchResultsContent,
+        files: [{
+            filename: 'search_results.txt',
+            text: searchResultsContent
+        }]
+    };
+    
+    // Store the search context to be sent with start_chat
+    sessionStorage.setItem('startChatWithSearchResults', JSON.stringify(searchContext));
+    
+    // Navigate to chat page
+    window.location.href = '/chat';
+}
+
+// Function to toggle filter help visibility
+function toggleFilterHelp() {
+    const helpDiv = document.getElementById('filter-help');
+    helpDiv.style.display = helpDiv.style.display === 'none' ? 'block' : 'none';
+}
+
+// Function to set filter example
+function setFilterExample(filterText) {
+    document.getElementById('filter').value = filterText;
+}
+
+// Function to extract filters from query using LLM
+async function extractFiltersFromQuery(query) {
+    try {
+        const response = await fetch('/api/extract-filters', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ query: query })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log(data)
+        return data || null;
+        
+    } catch (error) {
+        console.error('Error extracting filters:', error);
+        return null;
+    }
+}
+
+// Function to clear date fields
+function clearDates() {
+    document.getElementById('dateAfter').value = '';
+    document.getElementById('dateBefore').value = '';
+}
+
+// Disable auto-extract when user manually changes filters or dates
+document.getElementById('filter').addEventListener('input', function() {
+    document.getElementById('autoFilter').checked = false;
+});
+
+document.getElementById('dateAfter').addEventListener('change', function() {
+    document.getElementById('autoFilter').checked = false;
+});
+
+document.getElementById('dateBefore').addEventListener('change', function() {
+    document.getElementById('autoFilter').checked = false;
+});
 
 </script>
 {% endblock %}

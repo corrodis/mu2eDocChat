@@ -350,6 +350,20 @@ function initializeSocket() {
                     
                 // Add welcome message
                 addMessage('system', `Chat session started with document context: ${data.document_context.document_title}`);
+            } else if (data.document_context && data.document_context.search_query) {
+                // Handle search results context
+                const totalChunks = data.document_context.total_chunks || data.document_context.results_count;
+                const contextText = totalChunks && totalChunks !== data.document_context.results_count ? 
+                    `Search results for: "${data.document_context.search_query}" (${data.document_context.results_count} unique documents from ${totalChunks} chunks)` :
+                    `Search results for: "${data.document_context.search_query}" (${data.document_context.results_count} documents)`;
+                
+                document.getElementById('contextText').textContent = contextText;
+                document.getElementById('documentContext').style.display = 'block';
+                document.getElementById('chatTitle').textContent = 
+                    `Chat - Search Results`;
+                    
+                // Add welcome message
+                addMessage('system', `Chat session started with ${data.document_context.results_count} relevant documents for "${data.document_context.search_query}".`);
             } else {
                 document.getElementById('documentContext').style.display = 'none';
                 document.getElementById('chatTitle').textContent = 'Chat Assistant';
@@ -383,7 +397,7 @@ function initializeSocket() {
     });
 }
 
-function startNewChat(docId = null) {
+function startNewChat(docId = null, searchContext = null) {
     try {
         if (!socket) {
             initializeSocket();
@@ -397,6 +411,10 @@ function startNewChat(docId = null) {
         
         if (docId) {
             requestData.doc_id = docId;
+        }
+        
+        if (searchContext) {
+            requestData.search_context = searchContext;
         }
         
         socket.emit('start_chat', requestData);
@@ -492,14 +510,29 @@ function startChatWithDocument(docId) {
     sessionStorage.setItem('startChatWithDoc', docId);
 }
 
-// Check if we should start a chat with a document when page loads
+// Check if we should start a chat with a document or search results when page loads
 window.addEventListener('load', function() {
     initializeSocket();
     
+    // Check for regular document context first
     const docId = sessionStorage.getItem('startChatWithDoc');
     if (docId) {
         sessionStorage.removeItem('startChatWithDoc');
         startNewChat(docId);
+        return;
+    }
+    
+    // Check for search results context
+    const searchContextStr = sessionStorage.getItem('startChatWithSearchResults');
+    if (searchContextStr) {
+        sessionStorage.removeItem('startChatWithSearchResults');
+        try {
+            const searchContext = JSON.parse(searchContextStr);
+            startNewChat(null, searchContext);
+        } catch (error) {
+            console.error('Error parsing search context:', error);
+            addMessage('system', 'Error loading search context for chat');
+        }
     }
 });
 
