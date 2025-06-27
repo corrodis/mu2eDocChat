@@ -67,16 +67,15 @@ async function summarizeSearchResult(docid, resultIndex, fileIndex, query) {
         
         // Update the summary in the DOM
         summaryElement.innerHTML = `
-            <span style="color: #2c3e50;">AI Summary: ${escapeHtml(summary)}</span>
+            <strong>AI Summary:</strong> <span style="color: #2c3e50;">${escapeHtml(summary)}</span>
         `;
         
     } catch (error) {
         console.error('Error generating summary for search result:', error);
         
-        // Fall back to showing truncated original content
-        const originalContent = document.getElementById(`original-content-${resultIndex}`).textContent;
+        // Show error message
         summaryElement.innerHTML = `
-            <span style="color: #666;">${escapeHtml(originalContent.substring(0, 300))}${originalContent.length > 300 ? '...' : ''}</span>
+            <strong>AI Summary:</strong> <span style="color: #e74c3c; font-style: italic;">Failed to generate summary</span>
         `;
     }
 }
@@ -86,6 +85,18 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+function toggleVisibility(id) {
+    var element = document.getElementById(id);
+    var button = document.getElementById(id+"-button");
+    if (element.style.display === 'none') {
+      element.style.display = 'block';
+      button.innerHTML = "hide"
+    } else {
+      element.style.display = 'none';
+      button.innerHTML = "show"
+    }
+  }
 
 function showError(message) {
     const errorDiv = document.getElementById('error');

@@ -119,8 +119,9 @@ def list_to_search_result(docs, enhence=0):
                 if enhence > 1: # also add the content
                     if 'files' in doc_:
                         for file in doc_['files']:
-                            text +=  "File: " + file['filename'] + ": " + file['text']
-                            filenames.append(file['filename'])
+                            if 'filename' in file:
+                                text +=  "File: " + file['filename'] + ": " + file['text']
+                                filenames.append(file['filename'])
                     meta['filename'] = ", ".join(filenames)
                 documents.append(text)
 
@@ -163,3 +164,26 @@ def list_to_search_result(docs, enhence=0):
         'ids': ids,
         'metadata': metadata
     }
+
+
+def should_add_image_descriptions():
+    """Check if image descriptions should be added based on environment variables"""
+    image_llm_url = os.getenv('MU2E_IMAGE_LLM_URL')
+    image_descriptions_enabled = os.getenv('MU2E_IMAGE_DESCRIPTION', 'true').lower() == 'true'
+    return image_llm_url is not None and image_descriptions_enabled
+
+
+def getOpenAIClientForImages():
+    """Get OpenAI client configured for image description API"""
+    from openai import OpenAI
+    
+    base_url = os.getenv('MU2E_IMAGE_LLM_URL')
+    if not base_url:
+        raise ValueError("MU2E_IMAGE_LLM_URL not set")
+    
+    api_key = os.getenv('MU2E_IMAGE_LLM_API_KEY', 'dummy-key')
+    
+    return OpenAI(
+        base_url=base_url,
+        api_key=api_key
+    )

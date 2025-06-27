@@ -174,23 +174,44 @@ def get_generate_info():
 
 @app.route('/api/generate', methods=['POST'])
 def trigger_generate():
-    """Trigger manual generate"""
+    """Trigger manual generate - either bulk or single document"""
     try:
+        data = request.get_json() or {}
+        docid = data.get('docid')
+        
         def run_generate():
+            from mu2e.utils import should_add_image_descriptions
+            from mu2e.tools import generate_from_local
+            add_image_descriptions = should_add_image_descriptions()
+            
+            # Always use default collection first (downloads from DocDB)
             db = docdb()
-            db.generate(days=1)
-
-            # temporary
-            for cn in collection_names:
-                if cn not in ["default"]:
-                    db_argo = docdb(collection=get_collection(cn))
-                    db_argo.generate(days=1)
+            
+            if docid:
+                # Regenerate specific document
+                db.get_parse_store(docid, save_raw=True, add_image_descriptions=add_image_descriptions)
+                # Then generate other collections from local cache for this specific document
+                for cn in collection_names:
+                    if cn not in ["default"]:
+                        collection = get_collection(cn)
+                        generate_from_local(collection=collection, docid=docid)
+            else:
+                # Bulk generate recent documents
+                db.generate(days=1, add_image_descriptions=add_image_descriptions)
+                # Then generate other collections from local cache (all documents)
+                for cn in collection_names:
+                    if cn not in ["default"]:
+                        collection = get_collection(cn)
+                        generate_from_local(collection=collection)
         
         # Run in background thread
         import threading
         threading.Thread(target=run_generate, daemon=True).start()
         
-        return jsonify({'status': 'started', 'message': 'Generate started in background'})
+        if docid:
+            return jsonify({'status': 'started', 'message': f'Document {docid} regeneration started in background'})
+        else:
+            return jsonify({'status': 'started', 'message': 'Generate started in background'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

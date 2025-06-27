@@ -88,6 +88,14 @@ def saveInCollection(doc, collection=None, chunking_strategy="default"):
             metadatas_.append(chunk_meta)
             ids_.append(chunk_id)
 
+    if len(ids_) == 0: #no files
+        chunk_meta = base_meta.copy()
+        chunk_meta['file_index'] = -1
+        documents_.append(chunk_meta['abstract'])
+        metadatas_.append(chunk_meta)
+        chunk_id = f"{docid}_{-1}_{0}"
+        ids_.append(chunk_id)
+
     collection = collection or get_collection() 
 
     if len(ids_) < 1:
@@ -312,15 +320,16 @@ def generate_from_local_all():
             generate_from_local(c)
 
 
-def generate_from_local(collection=None, chunking_strategy="default", base_path=None):
+def generate_from_local(collection=None, chunking_strategy="default", base_path=None, docid=None):
     """
-    Generate embeddings from all locally stored documents (meta.json files) into a ChromaDB collection.
+    Generate embeddings from locally stored documents (meta.json files) into a ChromaDB collection.
     This is useful for regenerating collections with different settings without re-downloading.
     
     Args:
         collection: ChromaDB collection (uses default if None)
+        chunking_strategy: Strategy for chunking text (default: "default")
         base_path: Base path for documents (defaults to ~/.mu2e/data)
-        force_reload: If True, reload all documents even if they already exist in the collection
+        docid: Specific document ID to process (e.g., "mu2e-docdb-12345"). If None, processes all documents.
     Returns:
         int: Number of documents successfully processed
     """
@@ -330,14 +339,27 @@ def generate_from_local(collection=None, chunking_strategy="default", base_path=
         print(f"Data directory {base_dir} does not exist")
         return 0
     
-    # Find all mu2e-docdb-* directories
-    doc_dirs = [d for d in base_dir.iterdir() if d.is_dir() and d.name.startswith('mu2e-docdb-')]
-    
-    if not doc_dirs:
-        print("No documents found in data directory")
-        return 0
+    if docid:
+        # Process specific document
+        if not docid.startswith('mu2e-docdb-'):
+            docid = f"mu2e-docdb-{docid}"
+        
+        doc_dir = base_dir / docid
+        if not doc_dir.exists():
+            print(f"Document directory {doc_dir} does not exist")
+            return 0
+        
+        doc_dirs = [doc_dir]
+        print(f"Generating embeddings for document {docid}")
+    else:
+        # Find all mu2e-docdb-* directories
+        doc_dirs = [d for d in base_dir.iterdir() if d.is_dir() and d.name.startswith('mu2e-docdb-')]
+        
+        if not doc_dirs:
+            print("No documents found in data directory")
+            return 0
 
-    print(f"Generating embeddings for {len(doc_dirs)} documents")
+        print(f"Generating embeddings for {len(doc_dirs)} documents")
     
     processed_count = 0
     
@@ -414,7 +436,6 @@ def getOpenAIClient(base_url=None, api_key=None):
     base_url = base_url or os.getenv('MU2E_CHAT_BASE_URL', 'http://localhost:55019/v1')
     api_key = api_key or os.getenv('MU2E_CHAT_API_KEY', 'whatever+random')
         
-    print("DEBUG", base_url)
     return OpenAI(
         base_url=base_url,
         api_key=api_key

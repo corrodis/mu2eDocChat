@@ -20,6 +20,7 @@ PARSER_MAP = {
     'vnd.openxmlformats-officedocument.spreadsheetml.sheet': ExcelParser,
     'txt': TextParser,
     'text/plain': TextParser,
+    'plain; charset=UTF-8': TextParser,
 }
 
 def parser(document, doc_type):

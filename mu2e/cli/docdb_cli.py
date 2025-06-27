@@ -16,6 +16,10 @@ def main():
                                help='Number of days to look back (default: 30)')
     generate_parser.add_argument('--force-reload', action='store_true',
                                help='Force reload documents even if they already exist locally')
+    generate_parser.add_argument('--no-image-descriptions', action='store_true',
+                               help='Disable AI image descriptions (enabled by default if MU2E_IMAGE_LLM_URL is set)')
+    generate_parser.add_argument('--docid', type=int,
+                               help='Generate specific document by ID (forces reload)')
     
     # Generate from local
     local_parser = subparsers.add_parser('generate-local', help='Generate embeddings from locally stored documents')
@@ -41,11 +45,27 @@ def main():
     args = parser.parse_args()
     
     if args.command == 'generate':
+        from mu2e.utils import should_add_image_descriptions
+        
         collection = get_collection(args.collection) if args.collection != 'default' else None
-        force_text = " (force reload)" if args.force_reload else ""
-        print(f"Generating {args.collection} embeddings for documents from the last {args.days} days{force_text}...")
+        
+        # Determine if image descriptions should be used
+        add_image_descriptions = should_add_image_descriptions() and not args.no_image_descriptions
+        
         db = docdb(collection=collection)
-        db.generate(days=args.days, force_reload=args.force_reload)
+        
+        if args.docid:
+            # Generate specific document by ID (always force reload)
+            image_text = " (with image descriptions)" if add_image_descriptions else ""
+            print(f"Generating {args.collection} embeddings for document {args.docid} (force reload){image_text}...")
+            db.get_parse_store(args.docid, save_raw=True, add_image_descriptions=add_image_descriptions)
+        else:
+            # Generate recent documents
+            force_text = " (force reload)" if args.force_reload else ""
+            image_text = " (with image descriptions)" if add_image_descriptions else ""
+            print(f"Generating {args.collection} embeddings for documents from the last {args.days} days{force_text}{image_text}...")
+            db.generate(days=args.days, force_reload=args.force_reload, add_image_descriptions=add_image_descriptions)
+        
         print("Done!")
         
     elif args.command == 'generate-local':

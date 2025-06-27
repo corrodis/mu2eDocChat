@@ -29,8 +29,6 @@ collection_names = ["default",
 def get_collection(collection_name=None, user=None, model=None, url=None):
     """Get a ChromaDB collection by name or type"""
     client = _get_client()
-
-    print("DEBUG", collection_name)
     
     if collection_name in ['argo']:
         # Return Argo collection with custom embedding function
@@ -73,7 +71,6 @@ class ArgoEmbeddingFunction(EmbeddingFunction):
         self.url = url or os.getenv('MU2E_ARGO_EMBED_URL',"https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/embed/")
         self.headers = {"Content-Type": "application/json"}
         
-        print("DEBUG", self.url)
         # Set dimensions based on model
         self.dimensions = {
             "ada002": 1536,

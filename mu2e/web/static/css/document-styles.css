@@ -1,5 +1,18 @@
 /* Shared styles for document display across search and document pages */
 
+/* Button styles */
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+    border: 1px solid #6c757d;
+    margin-left: 0.5rem;
+}
+
+.btn-secondary:hover {
+    background-color: #5a6268;
+    border-color: #545b62;
+}
+
 .document-results,
 .search-results {
     margin-top: 2rem;
@@ -153,3 +166,7 @@
     background: #219a52;
     text-decoration: none;
 }
+
+.toggle-text {
+    cursor: pointer;
+  }

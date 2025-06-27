@@ -398,13 +398,23 @@ class docdb:
     def parse_files(self, doc, add_image_descriptions=None):
         """
         Runs all implemented parsings.
+        
+        Args:
+            doc: Document dictionary with files
+            add_image_descriptions (bool): Whether to generate AI descriptions for images
+                                         If None, uses environment variable settings
         """
+        from .utils import should_add_image_descriptions
+        
+        if add_image_descriptions is None:
+            add_image_descriptions = should_add_image_descriptions()
+        
         for i, file in enumerate(doc['files']):
             try:
                 p = parser(file['document'], file['type'])
-                text_out,_ = p.get_text()
-                if add_image_descriptions:
-                    text_out = p.add_image_descriptions()
+                text_out, images = p.get_text()
+                if add_image_descriptions and images:
+                    text_out = p.add_image_descriptions(text_out, images)
                 doc['files'][i]['text'] = text_out
             except Exception as e:
                 print(e)
@@ -454,21 +464,21 @@ class docdb:
         #rag.doc_generate_embedding(docid)
         #print(f"Data saved to {full_path}")
     
-    def get_and_parse(self, docid):
+    def get_and_parse(self, docid, add_image_descriptions=False):
         doc_full = self.get(docid)
-        self.parse_files(doc_full)
+        self.parse_files(doc_full, add_image_descriptions=add_image_descriptions)
         return doc_full
 
-    def get_parse_store(self, docid, save_raw=False):
+    def get_parse_store(self, docid, save_raw=False, add_image_descriptions=False):
         from mu2e import tools
-        doc_full = self.get_and_parse(docid)
+        doc_full = self.get_and_parse(docid, add_image_descriptions=add_image_descriptions)
         tools.saveInCollection(doc_full, self.collection)
         if save_raw:
             self.saveMetaJson(doc_full)
             self.saveFiles(doc_full)
         return doc_full
 
-    def generate(self, days=10, force_reload=False, save_raw=True):
+    def generate(self, days=10, force_reload=False, save_raw=True, add_image_descriptions=False):
         from mu2e import tools
         latest = self.list_latest(days)
         for doc in latest:
@@ -480,6 +490,6 @@ class docdb:
                 if not doc_ is None:
                     print("mu2e-docdb-"+str(doc['id'])+" - present")
             if doc_ is None:
-                self.get_parse_store(doc['id'], save_raw=save_raw)
+                self.get_parse_store(doc['id'], save_raw=save_raw, add_image_descriptions=add_image_descriptions)
             
     

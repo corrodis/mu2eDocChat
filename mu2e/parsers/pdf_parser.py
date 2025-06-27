@@ -44,17 +44,38 @@ class PDFParser(BaseParser):
                     
                     # Extract images
                     for img_info in page.images:
-                        try:
-                            img = Image.open(io.BytesIO(img_info['stream'].get_data()))
+                        #try:
+                        if True:
+                            if img_info.get("imagemask") == True: # not an image
+                                continue
+                            stream = img_info['stream']
+                            filter_obj = stream.get("Filter")
+                            if 'FlateDecode' in str(filter_obj):
+                                continue
+                                        
+                                # Get the raw, decompressed pixel data
+                                data = stream.get_data()
+                                        
+                                # Get the image dimensions
+                                width = img_info['width']
+                                height = img_info['height']
+                                        
+                                # Determine the color mode
+                                # For now, we'll handle the common RGB and Grayscale cases
+                                mode = 'RGB' if '/DeviceRGB' in img_info.get('colorspace', []) else 'L'
+
+                                # Reconstruct the image from the raw bytes
+                                img = Image.frombytes(mode, (width, height), data)
+                            else:
+                                img = Image.open(io.BytesIO(stream.get_data()))
                             img = self._resize_image(img, rescale_image_max_dim)
                             img_base64 = self._image_to_base64(img, img.format)
-                            
                             images.append(img_base64)
                             image_cnt += 1
                             extracted_text += f"[Image {image_cnt}]"
-                        except Exception as e:
-                            print(f"Error processing image on page {i+1}: {e}")
-                            continue
+                        #except Exception as e:
+                        #    print(f"Error processing image on page {i+1}: {e}")
+                        #    continue
                     
                     extracted_text += "</page>\n"
         

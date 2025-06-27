@@ -5,6 +5,8 @@ DOCX (Word document) parser
 import io
 from PIL import Image
 from .base_parser import BaseParser
+import os
+
 
 class DOCXParser(BaseParser):
     """Parser for DOCX files"""
@@ -12,8 +14,9 @@ class DOCXParser(BaseParser):
     def get_text(self, rescale_image_max_dim=500):
         """Extract text and images from DOCX document"""
         try:
+            os.environ['XML_PARSE_HUGE'] = '1'
             import docx
-            
+
             doc = docx.Document(self.doc)
             text_parts = []
             images = []

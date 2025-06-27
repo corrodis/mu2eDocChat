@@ -12,7 +12,8 @@
     
     <div class="input-group">
         <input type="text" id="docIdInput" placeholder="Enter document ID (e.g., mu2e-docdb-12345)" class="flex-1">
-        <button onclick="lookupDocument()" class="btn">Lookup Document</button>
+        <button onclick="lookupDocument()" class="btn">Show Document</button>
+        <button onclick="regenerateDocument()" class="btn btn-secondary" id="regenerateBtn">Regenerate</button>
     </div>
     
     <div id="loading" class="loading" style="display: none;">
@@ -70,16 +71,82 @@ function lookupDocument() {
         
         // Display document details
         displayDocumentDetails(data);
+        // Show regenerate button after successful lookup
+        document.getElementById('regenerateBtn').style.display = 'inline-block';
     })
     .catch(error => {
         document.getElementById('loading').style.display = 'none';
         showError('Error loading document: ' + error.message);
+        // Hide regenerate button on error
+        document.getElementById('regenerateBtn').style.display = 'none';
     });
+}
+
+function regenerateDocument() {
+    const docId = document.getElementById('docIdInput').value.trim();
+    if (!docId) {
+        showError('Please enter a document ID first');
+        return;
+    }
+    
+    // Extract numeric ID from the full doc ID (e.g., "mu2e-docdb-12345" -> "12345")
+    const numericId = docId.replace(/^mu2e-docdb-/, '');
+    
+    if (!numericId || isNaN(numericId)) {
+        showError('Invalid document ID format. Expected: mu2e-docdb-12345');
+        return;
+    }
+    
+    // Show loading
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('error').style.display = 'none';
+    document.getElementById('results').innerHTML = '';
+    
+    // Make regenerate API request
+    fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            docid: parseInt(numericId)
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById('loading').style.display = 'none';
+        if (data.error) {
+            showError(data.error);
+            return;
+        }
+        
+        // Show success message and automatically reload the document
+        showSuccess('Document regenerated successfully! Reloading...');
+        setTimeout(() => {
+            lookupDocument();
+        }, 1000);
+    })
+    .catch(error => {
+        document.getElementById('loading').style.display = 'none';
+        showError('Error regenerating document: ' + error.message);
+    });
+}
+
+function showSuccess(message) {
+    const errorDiv = document.getElementById('error');
+    errorDiv.textContent = message;
+    errorDiv.style.display = 'block';
+    errorDiv.style.backgroundColor = '#d4edda';
+    errorDiv.style.color = '#155724';
+    errorDiv.style.borderColor = '#c3e6cb';
 }
 
 function displayDocumentDetails(doc) {
     const resultsDiv = document.getElementById('results');
     
+    const { files, ...docWithoutFiles } = doc;
+    const formattedDocString = escapeHtml(JSON.stringify(docWithoutFiles, null, 4))
+
     let html = `
         <div class="card document-detail-card">
             <h3>Document Details</h3>
@@ -88,7 +155,11 @@ function displayDocumentDetails(doc) {
             <div class="meta">
                 ${doc.docid || 'N/A'} | 
                 <strong>Date:</strong> ${doc.revised_content || 'N/A'} | 
-                <strong>Version:</strong> ${doc.version || 'N/A'}
+                <strong>Version:</strong> ${doc.version || 'N/A'} | 
+                <strong>Meta: </strong> <span class="toggle-text" onclick="toggleVisibility('meta-${doc.docid}');" id="meta-${doc.docid}-button">show</span>
+            </div>
+            <div class="meta">
+                <div id="meta-${doc.docid}" style="display:none;"><pre><code>${escapeHtml(JSON.stringify(docWithoutFiles, null, 4))}</code></pre></div>
             </div>
             
             ${doc.abstract ? `<div class="abstract"><strong>Abstract:</strong><br>${escapeHtml(doc.abstract)}</div>` : ''}
@@ -104,6 +175,11 @@ function displayDocumentDetails(doc) {
                                 <div id="summary-${idx}" style="margin-top: 0.5rem;">
                                     <strong>AI Summary:</strong> 
                                     <span class="summary-loading">Generating summary...</span>
+                                </div>
+                                <div>
+                                    <strong>Full Text: </strong>
+                                    <span class="toggle-text" onclick="toggleVisibility('text-${idx}');" id="text-${idx}-button">show</span>
+                                    <span id="text-${idx}" style="display:none;">${escapeHtml(file.text)}</span>
                                 </div>
                             ` : ''}
                         </div>
