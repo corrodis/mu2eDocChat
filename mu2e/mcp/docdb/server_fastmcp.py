@@ -9,7 +9,7 @@ import json
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 import mu2e
-from mu2e import anl
+from mu2e.collections import get_collection, collection_names
 from mu2e.mcp.docdb.resources import (
     get_metadata_schema,
     get_mu2e_overview,
@@ -35,23 +35,17 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     # Get configuration from server context (set during initialization)
     config = getattr(server, '_config', {})
     dbname = config.get('dbname', DEFAULT_DBNAME)
-    use_argo = config.get('use_argo', False)
-    use_argo_remote = config.get('use_argo_remote', False)
+    collection_name = config.get('collection', 'default')
     
     # Set up collection based on arguments
-    if use_argo_remote:
-        collection = anl.get_collection(url=ARGO_REMOTE_URL)
-        # Use stderr to avoid corrupting stdio protocol
-        import sys
-        print(f"Using Argo-Remote collection for {dbname}", file=sys.stderr)
-    elif use_argo:
-        collection = anl.get_collection()
-        import sys
-        print(f"Using Argo collection for {dbname}", file=sys.stderr)
-    else:
+    if collection_name == 'default':
         collection = None
         import sys
         print(f"Using default collection for {dbname}", file=sys.stderr)
+    else:
+        collection = get_collection(collection_name)
+        import sys
+        print(f"Using {collection_name} collection for {dbname}", file=sys.stderr)
     
     # Initialize database connection
     #db = mu2e.docdb(login=True, collection=collection)
@@ -190,12 +184,11 @@ def metadata_schema() -> str:
     return get_metadata_schema()
 
 
-def setup_server_config(dbname: str = DEFAULT_DBNAME, use_argo: bool = False, use_argo_remote: bool = False):
+def setup_server_config(dbname: str = DEFAULT_DBNAME, collection: str = 'default'):
     """Set server configuration for lifespan context."""
     mcp._config = {
         'dbname': dbname,
-        'use_argo': use_argo,
-        'use_argo_remote': use_argo_remote
+        'collection': collection
     }
 
 
@@ -204,16 +197,14 @@ def main():
     parser = argparse.ArgumentParser(description='Run the Mu2e DocDB FastMCP server')
     parser.add_argument('--dbname', default=DEFAULT_DBNAME,
                       help=f'DocDB database name (default: {DEFAULT_DBNAME})')
-    parser.add_argument('--argo', action='store_true',
-                      help='Use Argo embeddings')
-    parser.add_argument('--argo-remote', action='store_true',
-                      help='Use Argo remote embeddings via proxy')
+    parser.add_argument('--collection', type=str, default='default',
+                      help=f'Collection to use (choices: {", ".join(collection_names)}, default: default)')
     parser.add_argument('--port', type=int,
                       help='Run as HTTP server on specified port (default: stdio for MCP clients)')
     args = parser.parse_args()
     
     # Configure server before running
-    setup_server_config(args.dbname, args.argo, args.argo_remote)
+    setup_server_config(args.dbname, args.collection)
     
     if args.port:
         # HTTP streamable transport - prints are safe here

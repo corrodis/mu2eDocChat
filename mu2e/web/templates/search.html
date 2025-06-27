@@ -13,8 +13,9 @@
 
     <div class="input-group">
         <select id="collection">
-            <option value="argo">Default</option>
-            <option value="mu2e">Argo</option>
+            {% for collection in collection_names %}
+            <option value="{{ collection }}"{% if collection == 'default' %} selected{% endif %}>{{ collection.title() }}</option>
+            {% endfor %}
         </select>
         <select id="searchType">
             <option value="search">Semantic Search</option>

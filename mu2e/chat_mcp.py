@@ -18,7 +18,7 @@ from mcp.client.streamable_http import streamablehttp_client
 from contextlib import AsyncExitStack
 import aiohttp
 from dotenv import load_dotenv
-from .utils import get_lof_dir
+from .utils import get_log_dir
 from .tools import getOpenAIClient
 
 # Load environment variables
@@ -121,7 +121,7 @@ class Chat:
         
         # Chat logging
         self.logging_level = int(os.getenv('MU2E_CHAT_ENABLE_LOGGING', 1)) # 0=off, 1=at the end, 2=after each interaction
-        self.log_dir = get_lof_dir()
+        self.log_dir = get_log_dir()
         self.conversation_start_time = datetime.now()
         self.conversation_id = f"chat_{self.conversation_start_time.strftime('%Y%m%d_%H%M%S')}_{id(self)}"
         

@@ -33,7 +33,7 @@ Add this configuration to your VS Code settings:
 ```
 
 **Prerequisites:**
-1. Start the MCP server in HTTP mode: `mu2e-mcp-server --port 1223 --dbname Mu2e --argo`
+1. Start the MCP server in HTTP mode: `mu2e-mcp-server --port 1223 --dbname Mu2e --collection=argo`
 2. Ensure the server is running before using Copilot chat features
 
 ### Stdio Transport (Alternative)
@@ -44,7 +44,7 @@ You can also use the stdio transport with command-line configuration:
     "servers": {
         "docdb": {
             "command": "/path/to/mu2eDocChat/.venv/bin/mu2e-mcp-server",
-            "args": ["--dbname", "Mu2e", "--argo"],
+            "args": ["--dbname", "Mu2e", "--collection=argo"],
             "env": {
                 "MU2E_DOCDB_USERNAME": "your_username",
                 "MU2E_DOCDB_PASSWORD": "your_password"
@@ -80,7 +80,7 @@ Add to your MCP settings:
     "args": [
         "--dbname",
         "Mu2e",
-        "--argo"
+        "--collection=argo"
     ],
     "env": {
         "MU2E_DOCDB_USERNAME": "your_username",
@@ -89,14 +89,14 @@ Add to your MCP settings:
 }
 ```
 
-### Using Argo remote embeddings (via proxy)
+### Using multi-qa embeddings
 ```json
 "docdb": {
     "command": "/path/to/mu2eDocChat/.venv/bin/mu2e-mcp-server",
     "args": [
         "--dbname",
         "Mu2e",
-        "--argo-remote"
+        "--collection=multi-qa"
     ],
     "env": {
         "MU2E_DOCDB_USERNAME": "your_username",
@@ -108,8 +108,10 @@ Add to your MCP settings:
 ## CLI Options
 
 - `--dbname`: DocDB database name (default: Mu2e)
-- `--argo`: Use Argo embeddings for larger context windows
-- `--argo-remote`: Use Argo remote embeddings via SSH tunnel proxy
+- `--collection`: Collection to use (choices: default, argo, multi-qa, default: default)
+  - `default`: Local embeddings (256 token context)
+  - `argo`: ANL Argo API embeddings (8000+ token context)
+  - `multi-qa`: SentenceTransformer embeddings (512 token context)
 
 ## Testing and Debugging
 
@@ -121,17 +123,17 @@ Use the MCP Inspector to test the server:
 npx @modelcontextprotocol/inspector uv run mu2e-mcp-server
 
 # Using uv with Argo embeddings
-npx @modelcontextprotocol/inspector uv run mu2e-mcp-server -- --argo
+npx @modelcontextprotocol/inspector uv run mu2e-mcp-server --collection=argo
 
-# Or directly via virtual environment
-npx @modelcontextprotocol/inspector /path/to/mu2eDocChat/.venv/bin/mu2e-mcp-server --argo-remote
+# Or directly via virtual environment with multi-qa
+npx @modelcontextprotocol/inspector /path/to/mu2eDocChat/.venv/bin/mu2e-mcp-server --collection=multi-qa
 ```
 
 ### HTTP Transport Testing
 
 Start the server in HTTP mode:
 ```bash
-mu2e-mcp-server --port 1223 --dbname Mu2e --argo
+mu2e-mcp-server --port 1223 --dbname Mu2e --collection=argo
 ```
 
 Initialize the MCP connection:

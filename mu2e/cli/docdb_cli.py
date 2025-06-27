@@ -1,14 +1,13 @@
 # mu2e/cli.py
 import argparse
 from mu2e.docdb import docdb
-from mu2e import search, tools, anl
+from mu2e import search, tools
+from mu2e.collections import get_collection, collection_names
 
 def main():
     parser = argparse.ArgumentParser(description='Mu2e DocDB utilities')
-    parser.add_argument('--argo', action='store_true',
-                       help='Use Argo embeddings instead of default collection')
-    parser.add_argument('--argo-remote', action='store_true',
-                       help='Use Argo embeddings instead of default collection, connect to argo-proxy through ssh tunnel')
+    parser.add_argument('--collection', type=str, default='default',
+                       help=f'Collection to use (choices: {", ".join(collection_names)}, default: default)')
     subparsers = parser.add_subparsers(dest='command', help='Commands')
     
     # Generate database
@@ -37,32 +36,21 @@ def main():
     args = parser.parse_args()
     
     if args.command == 'generate':
-        collection = anl.get_collection() if args.argo else None
-        collection = anl.get_collection(url="http://localhost:55019/v1/embed") if args.argo_remote else\
-                     anl.get_collection() if args.argo else None
-        collection_type = "Argo" if args.argo or args.argo_remote else "default"
-        print(f"Generating {collection_type} embeddings for documents from the last {args.days} days...")
+        collection = get_collection(args.collection) if args.collection != 'default' else None
+        print(f"Generating {args.collection} embeddings for documents from the last {args.days} days...")
         db = docdb(collection=collection)
         db.generate(days=args.days)
         print("Done!")
         
     elif args.command == 'generate-local':
-        collection = anl.get_collection() if args.argo else None
-        collection = anl.get_collection(url="http://localhost:55019/v1/embed") if args.argo_remote else\
-                     anl.get_collection() if args.argo else None
-        collection_type = "Argo" if args.argo or args.argo_remote else "default"
-        collection_type = "Argo" if args.argo else "default"
-        print(f"Generating {collection_type} embeddings from locally stored documents...")
+        collection = get_collection(args.collection) if args.collection != 'default' else None
+        print(f"Generating {args.collection} embeddings from locally stored documents...")
         processed = tools.generate_from_local(collection=collection)
         print(f"Done! Processed {processed} documents")
         
     elif args.command == 'search':
         # Select collection
-        collection = anl.get_collection() if args.argo else None
-        collection = anl.get_collection(url="http://localhost:55019/v1/embed") if args.argo_remote else\
-                     anl.get_collection() if args.argo else None
-        collection_type = "Argo" if args.argo or args.argo_remote else "default"
-        collection_type = "Argo" if args.argo else "default"
+        collection = get_collection(args.collection) if args.collection != 'default' else None
         
         # Perform search
         if args.fulltext:
@@ -70,7 +58,7 @@ def main():
             results = search.search_fulltext(args.query, n_results=args.top, collection=collection)
             search_type = "Full-text"
         else:
-            print(f"Vector search using {collection_type} embeddings for: '{args.query}'")
+            print(f"Vector search using {args.collection} embeddings for: '{args.query}'")
             # Vector search with optional date filtering
             if args.days:
                 results = search.search_by_date(args.query, days_back=args.days, 

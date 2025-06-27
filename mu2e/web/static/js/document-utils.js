@@ -36,7 +36,7 @@ async function summarizeFile(docid, fileIndex) {
         
         // Show error message in the DOM
         summaryElement.innerHTML = `
-            <strong>Summary:</strong> 
+            <strong>AI Summary:</strong> 
             <span style="color: #e74c3c; font-style: italic;">Failed to generate summary</span>
         `;
     }
@@ -67,7 +67,7 @@ async function summarizeSearchResult(docid, resultIndex, fileIndex, query) {
         
         // Update the summary in the DOM
         summaryElement.innerHTML = `
-            <span style="color: #2c3e50;">Summary: ${escapeHtml(summary)}</span>
+            <span style="color: #2c3e50;">AI Summary: ${escapeHtml(summary)}</span>
         `;
         
     } catch (error) {

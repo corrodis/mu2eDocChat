@@ -4,26 +4,17 @@ import numpy as np
 from pathlib import Path
 from dotenv import load_dotenv
 from .utils import get_data_dir, convert_to_timestamp, get_chroma_path
+from .collections import get_collection
 from .docdb import docdb
 from .chunking import chunk_text_simple
-import sqlite3
 import threading
 import time
 from datetime import datetime
-from packaging import version
-if version.parse(sqlite3.sqlite_version) < version.parse("3.35.0"):
-    # hack from https://gist.github.com/defulmere/8b9695e415a44271061cc8e272f3c300
-    __import__('pysqlite3')
-    import sys
-    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-import chromadb
 import tiktoken
 from openai import OpenAI
 from tqdm import tqdm
 
-def getDefaultCollection():
-    client = chromadb.PersistentClient(path=get_chroma_path())
-    return client.get_or_create_collection(name=os.getenv('MU2E_CHROMA_COLLECTION_NAME') or "mu2e_default")
+
 
 
 def saveInCollection(doc, collection=None, chunking_strategy="default"):
@@ -97,7 +88,7 @@ def saveInCollection(doc, collection=None, chunking_strategy="default"):
             metadatas_.append(chunk_meta)
             ids_.append(chunk_id)
 
-    collection = collection or getDefaultCollection() 
+    collection = collection or get_collection() 
 
     if len(ids_) < 1:
         print(f"{docid} has no documents/chunks to store")
@@ -123,7 +114,7 @@ def loadFromCollection(docid, nodb=False, collection=None, reconstruct_files=Tru
     Returns:
         Document dictionary with reconstructed files or individual chunks
     """
-    collection = collection or getDefaultCollection()
+    collection = collection or get_collection()
 
     if not docid.startswith("mu2e-docdb-"):
         full_docid = f"mu2e-docdb-{docid}"
@@ -412,8 +403,9 @@ def get_last_generate_info(collection_name='default'):
 def getOpenAIClient(base_url=None, api_key=None):
     load_dotenv()
     base_url = base_url or os.getenv('MU2E_CHAT_BASE_URL', 'http://localhost:55019/v1')
-    api_key = api_key or os.getenv('MU2E_CHAT_API_KEY', os.getenv('OPENAI_API_KEY', 'whatever+random'))
+    api_key = api_key or os.getenv('MU2E_CHAT_API_KEY', 'whatever+random')
         
+    print("DEBUG", base_url)
     return OpenAI(
         base_url=base_url,
         api_key=api_key

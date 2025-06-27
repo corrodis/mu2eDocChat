@@ -12,10 +12,11 @@ import logging
 from mu2e.chat_mcp import MCPClient,Chat
 import json
 from datetime import datetime
-from mu2e.tools import getDefaultCollection, load2, getOpenAIClient, start_background_generate, get_last_generate_info
+from mu2e.tools import load2, getOpenAIClient, start_background_generate, get_last_generate_info
 from mu2e.search import search, search_fulltext, search_list
-from mu2e.utils import list_to_search_result, get_lof_dir
-from mu2e import docdb, anl
+from mu2e.utils import list_to_search_result, get_log_dir
+from mu2e.collections import get_collection, collection_names
+from mu2e import docdb, collections
 import uuid
 
 app = Flask(__name__)
@@ -25,14 +26,14 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 logging.basicConfig(
     level=logging.INFO,
     handlers=[
-        logging.FileHandler(get_lof_dir()/'web.log'),
+        logging.FileHandler(get_log_dir()/'web.log'),
         logging.StreamHandler()
     ]
 )
 interaction_logger = logging.getLogger('user_interactions')
 interaction_logger.setLevel(logging.INFO)
 interaction_logger.propagate = False
-file_handler = logging.FileHandler(get_lof_dir() / 'web_interactions.log')
+file_handler = logging.FileHandler(get_log_dir() / 'web_interactions.log')
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 file_handler.setFormatter(formatter)
 if not interaction_logger.handlers:
@@ -53,7 +54,8 @@ def index():
 @app.route('/search')
 def search_page():
     """Direct DocDB search interface"""
-    return render_template('search.html')
+    from mu2e.collections import collection_names
+    return render_template('search.html', collection_names=collection_names)
 
 @app.route('/chat')
 def chat_page():
@@ -80,11 +82,8 @@ def search_api():
 
         if type != 'list' and not query:
             return jsonify({'error': 'Query is required'}), 400
-
-        if collection_name in ['argo']:
-            collection = anl.get_collection(url="http://localhost:55019/v1/embed")
-        else:
-            collection = getDefaultCollection() 
+        
+        collection = get_collection(collection_name)
 
         print(type)
         if type == 'search':
@@ -98,7 +97,7 @@ def search_api():
                                       n_results=n_results, 
                                       filters=filters)
         elif type == 'list':
-            results = search_list(days=n_results)
+            results = search_list(days=n_results, enhence=2)
 
         else:
             return jsonify({'error': 'Invalid search type'}), 400
@@ -135,9 +134,9 @@ def log_interaction():
 def get_document(docid):
     """Get specific document by ID"""
     try:
-        print(docid);
         doc = load2(docid, nodb=True) #collection=)
-        print(doc)
+        if doc is None:
+            return jsonify({"error":f"{docid} is not yet chached. Refresh with the \"Update Now\" button at the bottom and try again."}), 500
         return jsonify(doc)
         
     except Exception as e:
@@ -154,7 +153,7 @@ def get_document_summary(docid):
         content = doc['files'][index]['text']
         client = getOpenAIClient()
         response = client.chat.completions.create(
-            model="argo:gpt-4o",
+            model=os.getenv('MU2E_WEB_SUMMARY_MODEL', os.getenv('MU2E_CHAT_MODEL','argo:gpt-4o')),
             messages=[{"role": "system", "content": instructions},
                       {"role": "user", "content": content}]
         )
@@ -182,8 +181,10 @@ def trigger_generate():
             db.generate(days=1)
 
             # temporary
-            db_argo = docdb(collection=anl.get_collection(url="http://localhost:55019/v1/embed"))
-            db_argo.generate(days=1)
+            for cn in collection_names:
+                if cn not in ["default"]:
+                    db_argo = docdb(collection=get_collection(cn))
+                    db_argo.generate(days=1)
         
         # Run in background thread
         import threading
@@ -315,7 +316,7 @@ def main():
     args = parser.parse_args()
     
     # Start background generation
-    start_background_generate(interval_minutes=5, days=1)
+    #start_background_generate(interval_minutes=5, days=1)
     #start_background_generate(interval_minutes=5, days=1, from_local=True,)
     
     print(f"Starting Mu2e DocDB Web Interface on http://127.0.0.1:{args.port}")

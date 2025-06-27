@@ -3,7 +3,7 @@ Search and retrieval interface for ChromaDB collections with filtering capabilit
 """
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Union
-from .tools import getDefaultCollection
+from .collections import get_collection
 from .utils import convert_to_timestamp, list_to_search_result
 from .docdb import docdb
 
@@ -31,7 +31,7 @@ def search(
     Returns:
         Dictionary with search results including documents, metadata, distances, and ids
     """
-    collection = collection or getDefaultCollection()
+    collection = collection or get_collection()
     
     # Build where clause from filters
     where_clause = _build_where_clause(
@@ -84,7 +84,7 @@ def search_fulltext(
     Returns:
         Dictionary with search results matching search() format
     """
-    collection = collection or getDefaultCollection()
+    collection = collection or get_collection()
     
     # Build where clause from filters
     where_clause = _build_where_clause(

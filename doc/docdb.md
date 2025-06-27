@@ -29,20 +29,37 @@ print(doc['topics'])       # List of topics
 
 ## RAG & Local Database/Vector-Storage
 In order to perform Retrieval-Augmented Generation (RAG) style searches, a local vector-storage needs to be generated.
-The location if the this database can either be set by setting MU2E_DATA_DIR or, if that is not set, `~/.mu2e/data` is used.
-The generation of the embedings needs access to a embeding-model (so far openAI or Argo [TODO]).
+The location can be set by setting MU2E_DATA_DIR or, if not set, `~/.mu2e/data` is used.
 
-In order to use openAI OPENAI_API_KEY needs to be set.
+Multiple embedding collections are supported:
+- **default**: Local embeddings (256 token context)
+- **argo**: ANL Argo API (8000+ token context, requires credentials)
+- **multi-qa**: SentenceTransformer embeddings (512 token context)
 
 ### Example: generating local vector database
-By default, it will be stored in `~/.mu2e/data`. The default location can be modifed by setting MU2E_DATA_DIR.
 ```python
 from mu2e.docdb import docdb
+from mu2e.collections import get_collection
 
+# Generate with default collection
 db = docdb()
-
-# Generate all the embedings from all documents of the last 1 day
 db.generate(days=1)
+
+# Generate with Argo collection (requires ANL access)
+db_argo = docdb(collection=get_collection('argo'))
+db_argo.generate(days=1)
+
+# Generate with multi-qa collection
+db_multiqa = docdb(collection=get_collection('multi-qa'))
+db_multiqa.generate(days=1)
+```
+
+### CLI Usage
+```bash
+# Generate with different collections
+mu2e-docdb --collection=default generate --days=1
+mu2e-docdb --collection=argo generate --days=1
+mu2e-docdb --collection=multi-qa generate --days=1
 ```
 
 ### Example: RAG

@@ -38,7 +38,7 @@ document.getElementById('docIdInput').addEventListener('focus', function() {
 
 function lookupDocument() {
     const docId = document.getElementById('docIdInput').value.trim();
-    
+    console.log(docId)
     if (!docId) {
         showError('Please enter a document ID');
         return;
@@ -50,6 +50,9 @@ function lookupDocument() {
     document.getElementById('results').innerHTML = '';
     
     // Make API request
+    console.log("docId before encoding:", docId);
+    console.log("docId after encoding:", encodeURIComponent(docId));
+    console.log("Full URL:", `/api/document/${encodeURIComponent(docId)}`);
     fetch(`/api/document/${encodeURIComponent(docId)}`)
     .then(response => {
         return response.json()
@@ -99,7 +102,7 @@ function displayDocumentDetails(doc) {
                             <strong>File:</strong> ${escapeHtml(file.filename || 'Unnamed file')}<br>
                             ${file.text ? `
                                 <div id="summary-${idx}" style="margin-top: 0.5rem;">
-                                    <strong>Summary:</strong> 
+                                    <strong>AI Summary:</strong> 
                                     <span class="summary-loading">Generating summary...</span>
                                 </div>
                             ` : ''}

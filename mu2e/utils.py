@@ -3,7 +3,16 @@ import os
 from datetime import datetime
 from typing import Union, Optional
 
-def get_lof_dir():
+import sqlite3
+from packaging import version
+if version.parse(sqlite3.sqlite_version) < version.parse("3.35.0"):
+    # hack from https://gist.github.com/defulmere/8b9695e415a44271061cc8e272f3c300
+    __import__('pysqlite3')
+    import sys
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+import chromadb
+
+def get_log_dir():
     log_dir = os.getenv('MU2E_LOG_DIR')
     if log_dir:
         return Path(log_dir)
@@ -43,7 +52,6 @@ def get_chroma_path():
     default_dir = Path.home() / '.mu2e' / 'chroma'
     default_dir.mkdir(parents=True, exist_ok=True)
     return default_dir
-
 
 def convert_to_timestamp(date_input: Union[str, datetime, int]) -> Optional[int]:
     """
@@ -98,21 +106,27 @@ def list_to_search_result(docs, enhence=0):
         doc_id = doc.get('doc_id', f"mu2e-docdb-{doc.get('id', '')}")
         ids.append(f"{doc_id}")
         
-        doc = None
+        doc_ = None
         if enhence > 0:
             from .tools import load2
-            doc = load2(doc_id, nodb=True)
-            meta = {k: v for k, v in doc.items() if k != 'files'}
+            doc_ = load2(doc_id, nodb=True)
+            if doc_:
+                meta = {k: v for k, v in doc_.items() if k != 'files'}
+                meta['link'] = f"https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid=${doc_['docid']}"
 
-            text = ""
-            if enhence > 1: # also add the content
-                if 'files' in doc:
-                    for file in doc['files']:
-                        text +=  "File: " + file['filename'] + ": " + file['text']
-            documents.append(text)
+                text = ""
+                filenames = []
+                if enhence > 1: # also add the content
+                    if 'files' in doc_:
+                        for file in doc_['files']:
+                            text +=  "File: " + file['filename'] + ": " + file['text']
+                            filenames.append(file['filename'])
+                    meta['filename'] = ", ".join(filenames)
+                documents.append(text)
 
-        if not doc: # stick to what we get from the list 
+        if not doc_: # stick to what we get from the list 
             # Convert datetime to timestamp if present
+            print(doc)
             last_updated = doc.get('last_updated')
             if last_updated:
                 timestamp = int(last_updated.timestamp())
@@ -136,9 +150,10 @@ def list_to_search_result(docs, enhence=0):
                 'doc_type': 'mu2e-docdb',
                 'filename': doc.get('filename:', ''),
             }
+            documents.append('')
             
         metadata.append(meta)
-        documents.append('')
+        
     
     return {
         'query': 'list',
