@@ -14,9 +14,14 @@ def main():
     generate_parser = subparsers.add_parser('generate', help='Generate embeddings for recent documents')
     generate_parser.add_argument('--days', type=int, default=30,
                                help='Number of days to look back (default: 30)')
+    generate_parser.add_argument('--force-reload', action='store_true',
+                               help='Force reload documents even if they already exist locally')
     
     # Generate from local
     local_parser = subparsers.add_parser('generate-local', help='Generate embeddings from locally stored documents')
+    
+    # Generate from local for all collections
+    local_all_parser = subparsers.add_parser('generate-local-all', help='Generate embeddings for all non-default collections from locally stored documents')
     
     # Vector Search
     search_parser = subparsers.add_parser('search', help='Vector search in documents')
@@ -37,9 +42,10 @@ def main():
     
     if args.command == 'generate':
         collection = get_collection(args.collection) if args.collection != 'default' else None
-        print(f"Generating {args.collection} embeddings for documents from the last {args.days} days...")
+        force_text = " (force reload)" if args.force_reload else ""
+        print(f"Generating {args.collection} embeddings for documents from the last {args.days} days{force_text}...")
         db = docdb(collection=collection)
-        db.generate(days=args.days)
+        db.generate(days=args.days, force_reload=args.force_reload)
         print("Done!")
         
     elif args.command == 'generate-local':
@@ -47,6 +53,11 @@ def main():
         print(f"Generating {args.collection} embeddings from locally stored documents...")
         processed = tools.generate_from_local(collection=collection)
         print(f"Done! Processed {processed} documents")
+        
+    elif args.command == 'generate-local-all':
+        print("Generating embeddings for all non-default collections from locally stored documents...")
+        tools.generate_from_local_all()
+        print("Done! Processed all collections")
         
     elif args.command == 'search':
         # Select collection

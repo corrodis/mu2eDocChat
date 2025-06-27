@@ -4,7 +4,7 @@ import numpy as np
 from pathlib import Path
 from dotenv import load_dotenv
 from .utils import get_data_dir, convert_to_timestamp, get_chroma_path
-from .collections import get_collection
+from .collections import get_collection, collection_names
 from .docdb import docdb
 from .chunking import chunk_text_simple
 import threading
@@ -303,7 +303,16 @@ def _get_summary_claude(doc, model):
     return doc
 
 
-def generate_from_local(collection=None, chunking_strategy="default", base_path=None, force_reload=False):
+def generate_from_local_all():
+    """wrapper for generate_from_local that automatically generates all non-default collections"""
+    for collection_name in collection_names:
+        if collection_name not in ["default"]:
+            print(f"Generating {collection_name} collection...")
+            c = get_collection(collection_name)
+            generate_from_local(c)
+
+
+def generate_from_local(collection=None, chunking_strategy="default", base_path=None):
     """
     Generate embeddings from all locally stored documents (meta.json files) into a ChromaDB collection.
     This is useful for regenerating collections with different settings without re-downloading.

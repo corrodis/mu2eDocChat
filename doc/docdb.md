@@ -55,12 +55,30 @@ db_multiqa.generate(days=1)
 ```
 
 ### CLI Usage
+
+#### Generate from DocDB (downloads recent documents)
 ```bash
-# Generate with different collections
 mu2e-docdb --collection=default generate --days=1
 mu2e-docdb --collection=argo generate --days=1
 mu2e-docdb --collection=multi-qa generate --days=1
+
+# Force reload documents even if they exist locally
+mu2e-docdb --collection=argo generate --days=7 --force-reload
 ```
+
+#### Generate from Local Cache (faster, uses previously downloaded documents)
+```bash
+# Generate specific collection from local documents
+mu2e-docdb --collection=argo generate-local
+mu2e-docdb --collection=multi-qa generate-local
+
+# Generate ALL non-default collections from local documents (convenience command)
+mu2e-docdb generate-local-all
+```
+
+**Notes:** 
+- `generate-local` commands use documents already downloaded and cached locally in `~/.mu2e/data`. This is much faster since it skips the DocDB download step and only regenerates embeddings with different models/settings.
+- `--force-reload` option forces re-downloading documents from DocDB even if they already exist locally. Useful when documents have been updated or when local cache is corrupted.
 
 ### Example: RAG
 Example how to perform RAG based on the local vector storage (see above).
