@@ -314,7 +314,7 @@ Always cite documents with their IDs and links using this format:
                 # Add assistant message with tool calls
                 self.messages.append({
                     "role": "assistant",
-                    "content": message.content,
+                    "content": message.content or '',
                     "tool_calls": [
                         {
                             "id": tc.id,
