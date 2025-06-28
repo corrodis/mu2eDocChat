@@ -306,6 +306,8 @@ class docdb:
                         else:
                             result[field] = [item.text for item in tag.find_all('a')]
         
+        if "docid_str" not in result:
+            return None
         docid_str_split = result["docid_str"].split("-")
         result["docid"]  = int(docid_str_split[2])
         result["version"] = int(docid_str_split[3][1:])
@@ -466,12 +468,16 @@ class docdb:
     
     def get_and_parse(self, docid, add_image_descriptions=False):
         doc_full = self.get(docid)
+        if doc_full is None:
+            return None
         self.parse_files(doc_full, add_image_descriptions=add_image_descriptions)
         return doc_full
 
     def get_parse_store(self, docid, save_raw=False, add_image_descriptions=False):
         from mu2e import tools
         doc_full = self.get_and_parse(docid, add_image_descriptions=add_image_descriptions)
+        if doc_full is None:
+            return None
         tools.saveInCollection(doc_full, self.collection)
         if save_raw:
             self.saveMetaJson(doc_full)
