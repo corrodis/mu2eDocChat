@@ -136,19 +136,15 @@ class Chat:
         self.base_system_prompt =\
         """You are a helpful AI assistant for the Mu2e experiment with access to document search tools.
 
-Use these tools proactively to find information that will help answer user questions. 
-Ground your answers in information from the tools and be concise.
+Use these tools proactively to find information that will help answer user questions. Ground your answers in information from the tools and be concise.
 
-When searching:
-- Use semantic search for conceptual questions about physics, procedures, or analysis
-- Use fulltext_search for specific component names, numbers, or exact terms
-- Always search recent documents first, then expand timeframe if needed
+Use actual tool responses provided in the conversation. Make additional tool calls only through the proper API when needed for supplementary information.
 
-Use multiple tool calls when needed or ask the user for clarification.
+Ask the user for clarification when needed.
 
 Provide specific information rather than generic responses. If documents contain conflicting information, note the differences and cite both sources.
 
-When answering based on search results, briefly explain what you searched for.
+If you make an error or the user corrects you, carefully review the available information before responding.
 
 Always cite documents with their IDs and links using this format: 
 [mu2e-docdb-12345](https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid=12345)"""
@@ -312,21 +308,38 @@ Always cite documents with their IDs and links using this format:
             if message.tool_calls:
                 
                 # Add assistant message with tool calls
-                self.messages.append({
-                    "role": "assistant",
-                    "content": message.content or '',
-                    "tool_calls": [
+                # anthropic
+                if any(model_name in self.model for model_name in ["claude", "sonnet", "opus"]):
+                    content = []
+                    content.extend([
                         {
+                            "type": "tool_use",
                             "id": tc.id,
-                            "type": tc.type,
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments
-                            }
+                            "name": tc.function.name,
+                            "input": json.loads(tc.function.arguments)
                         }
                         for tc in message.tool_calls
-                    ]
-                })
+                    ])
+                    self.messages.append({
+                        "role": "assistant",
+                        "content": content
+                    })
+                else: # openAI
+                    self.messages.append({
+                        "role": "assistant",
+                        "content": message.content or '',
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": tc.type,
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments
+                                }
+                            }
+                            for tc in message.tool_calls
+                        ]
+                    })
                 
                 # Execute each tool call
                 for tool_call in message.tool_calls:
@@ -349,13 +362,24 @@ Always cite documents with their IDs and links using this format:
                         content = tool_result.content[0].text if tool_result.content else "No content"
                     except Exception as e:
                         content = f"Tool error: {str(e)}"
-                    
-                    # Add tool result to conversation
-                    self.messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": content
-                    })
+                        
+                    # if anthropic
+                    if any(model_name in self.model for model_name in ["claude", "sonnet", "opus"]):
+                        self.messages.append({
+                            "role": "user",
+                            "content": [{
+                                "type": "tool_result",
+                                "tool_use_id": tool_call.id,
+                                "content": content
+                            }]
+                        })
+                    else:
+                        # Add openAI tool result to conversation
+                        self.messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": content
+                        })
                 
                 # Get final response after tool execution
                 final_response = self.client.chat.completions.create(
