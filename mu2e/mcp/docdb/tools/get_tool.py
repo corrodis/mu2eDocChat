@@ -9,7 +9,7 @@ import mu2e.tools
 async def handle_get_tool(arguments: dict, db, collection=None) -> list[types.TextContent]:
     """Handle the get tool execution."""
     docid = arguments.get("docid")
-    
+   
     # Check if we have this docid already cached
     doc = mu2e.tools.load2("mu2e-docdb-"+str(docid), nodb=True, collection=collection)
     if doc is None:

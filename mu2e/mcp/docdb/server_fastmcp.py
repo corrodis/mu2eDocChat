@@ -96,7 +96,7 @@ async def docdb_get(
     from mu2e.mcp.docdb.tools.get_tool import handle_get_tool
     
     arguments = {"docid": docid}
-    results = await handle_get_tool(arguments, get_app_context().db)
+    results = await handle_get_tool(arguments,  get_db())
     return results[0].text
 
 
