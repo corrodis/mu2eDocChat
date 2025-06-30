@@ -1,4 +1,4 @@
-# Instalaltion and Setup
+# Installation and Setup
 
 ## Python environment
 It might be worth to start with a clean python environment. I don't think that's really needed though.
@@ -6,6 +6,13 @@ It might be worth to start with a clean python environment. I don't think that's
 python -m venv --clear .venv
 . .venv/bin/activate
 ```
+### Python 3.11
+I am not sure if we really need python3.11 but it certainly doesn't hurt. Using uv is probably cleanest:
+```bash
+pyenv install -v 3.11.9
+pyenv local 3.11.9
+```
+
 
 ## Development mode
 Run the following in the base folder of the cloned repository (only needs to be done ones)
