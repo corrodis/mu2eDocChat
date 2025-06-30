@@ -2,8 +2,20 @@ import argparse
 import asyncio
 import signal
 from mu2e.chat_mcp import Chat
+from mu2e.utils import get_available_models
 import sys
 
+
+def list_models():
+    """List available models."""
+    print("Available models:")
+    try:
+        models = get_available_models()
+        for model in models:
+            default_marker = " (default)" if model['is_default'] else ""
+            print(f"  {model['name']}{default_marker}")
+    except Exception as e:
+        print(f"Error fetching models: {e}")
 
 async def health_check():
     """Check health of chat services."""
@@ -51,7 +63,7 @@ async def chat_main(args):
     }
     
     # Create chat instance with user context
-    chat = Chat(user_context=user_context)
+    chat = Chat(user_context=user_context, model=args.model)
     shutdown_requested = False
 
     def signal_handler(signum, frame):
@@ -103,11 +115,19 @@ def main():
                        help='Query to ask. If not provided, starts interactive mode')
     parser.add_argument('--health', action='store_true',
                        help='Check health of chat services and exit')
+    parser.add_argument('--list-models', action='store_true',
+                       help='List available models and exit')
+    parser.add_argument('--model', type=str,
+                       help='Specify model to use (overrides default)')
     
     args = parser.parse_args()
     
     if args.health:
         asyncio.run(health_check())
+        return
+    
+    if args.list_models:
+        list_models()
         return
     
     asyncio.run(chat_main(args))

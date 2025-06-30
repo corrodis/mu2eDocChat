@@ -11,6 +11,7 @@ if version.parse(sqlite3.sqlite_version) < version.parse("3.35.0"):
     import sys
     sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import chromadb
+from dotenv import load_dotenv
 
 def get_log_dir():
     log_dir = os.getenv('MU2E_LOG_DIR')
@@ -187,3 +188,41 @@ def getOpenAIClientForImages():
         base_url=base_url,
         api_key=api_key
     )
+
+def get_model():
+    """Get the default chat model from environment"""
+    load_dotenv()
+    return os.getenv('MU2E_CHAT_MODEL', 'argo:gpt-4o')
+
+def get_available_models():
+    """Get available models from OpenAI API"""
+    try:
+        default_model = get_model()
+        
+        from .tools import getOpenAIClient
+        client = getOpenAIClient()
+        models = client.models.list()
+        
+        seen = set()
+        model_list = [
+            {
+                'id': model.id,
+                'name': model.internal_name, 
+                'is_default': model.internal_name == default_model
+            }
+            for model in models.data
+            if model.id not in seen and not seen.add(model.id)
+        ]
+
+        # Sort models, put default first
+        model_list.sort(key=lambda x: (not x['is_default'], x['name']))
+        
+        return model_list
+        
+    except Exception as e:
+        # Return a fallback list with just the default model if API fails
+        default_model = get_model()
+        fallback_models = [
+            {'id': default_model, 'name': default_model, 'is_default': True}
+        ]
+        return fallback_models

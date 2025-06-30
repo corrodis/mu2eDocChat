@@ -3,6 +3,7 @@
 {% block title %}Chat - mu2eDocChat{% endblock %}
 
 {% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/document-styles.css') }}">
 <style>
     .chat-container {
         display: flex;
@@ -246,6 +247,9 @@
             <div class="chat-header-buttons">
                 <button onclick="startNewChat()" id="newChatBtn">New Chat</button>
                 <button onclick="endCurrentChat()" id="endChatBtn" style="display: none;">End Chat</button>
+                <select id="modelSelect" style="margin-right: 0.5rem; padding: 0.4rem 0.8rem; border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.2); color: white; border-radius: 4px; font-size: 0.85rem;">
+                    <option value="">Loading models...</option>
+                </select>
             </div>
         </div>
         
@@ -259,8 +263,8 @@
             </div>
         </div>
         
-        <div class="typing-indicator" id="typingIndicator">
-            Assistant is typing...
+        <div class="typing-indicator-enhanced" id="typingIndicator">
+            Assistant is typing<span class="dots"><span></span><span></span><span></span></span>
         </div>
         
         <div class="chat-input-container">
@@ -417,6 +421,18 @@ function startNewChat(docId = null, searchContext = null) {
             requestData.search_context = searchContext;
         }
         
+        // Get selected model
+        const modelSelect = document.getElementById('modelSelect');
+        if (modelSelect.value) {
+            requestData.model = modelSelect.value;
+        }
+
+        // enable text 
+        const textarea = document.getElementById('messageInput');
+        textarea.disabled = false;
+        // disable model change
+        document.getElementById('modelSelect').disabled = true;
+
         socket.emit('start_chat', requestData);
         
     } catch (error) {
@@ -427,6 +443,8 @@ function startNewChat(docId = null, searchContext = null) {
 
 function endCurrentChat() {
     if (!currentSessionId || !socket) return;
+
+    document.getElementById('modelSelect').disabled = false;
     
     try {
         socket.emit('end_chat', {
@@ -510,9 +528,35 @@ function startChatWithDocument(docId) {
     sessionStorage.setItem('startChatWithDoc', docId);
 }
 
+// Load available models
+function loadAvailableModels() {
+    fetch('/api/models')
+        .then(response => response.json())
+        .then(models => {
+            const modelSelect = document.getElementById('modelSelect');
+            modelSelect.innerHTML = '';
+            
+            models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = model.name;
+                if (model.is_default) {
+                    option.selected = true;
+                }
+                modelSelect.appendChild(option);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading models:', error);
+            const modelSelect = document.getElementById('modelSelect');
+            modelSelect.innerHTML = '<option value="">Error loading models</option>';
+        });
+}
+
 // Check if we should start a chat with a document or search results when page loads
 window.addEventListener('load', function() {
     initializeSocket();
+    loadAvailableModels();
     
     // Check for regular document context first
     const docId = sessionStorage.getItem('startChatWithDoc');

@@ -14,7 +14,7 @@ import json
 from datetime import datetime, timedelta
 from mu2e.tools import load2, getOpenAIClient, start_background_generate, get_last_generate_info
 from mu2e.search import search, search_fulltext, search_list, parse_web_filters
-from mu2e.utils import list_to_search_result, get_log_dir
+from mu2e.utils import list_to_search_result, get_log_dir, get_available_models
 from mu2e.collections import get_collection, collection_names
 from mu2e import docdb, collections
 import uuid
@@ -281,6 +281,11 @@ Return ONLY the JSON object with "filters", "dateAfter", "dateBefore" fields (nu
         print(f"Filter extraction error: {e}")
         return jsonify({'filters': None, 'dateAfter': None, 'dateBefore': None})
 
+@app.route('/api/models')
+def get_models_endpoint():
+    """Get available models from OpenAI API"""
+    return jsonify(get_available_models())
+
 @app.route('/api/generate', methods=['POST'])
 def trigger_generate():
     """Trigger manual generate - either bulk or single document"""
@@ -331,6 +336,7 @@ def handle_start_chat(data):
         session_id = data.get('session_id')
         doc_id = data.get('doc_id')
         search_context = data.get('search_context')
+        model = data.get('model')  # Get selected model
         
         if not session_id:
             emit('error', {'message': 'Session ID is required'})
@@ -374,7 +380,7 @@ def handle_start_chat(data):
             #print(user_context)
         
         # Create new chat instance
-        chat = Chat(user_context=user_context)
+        chat = Chat(user_context=user_context, model=model)
         active_chats[session_id] = chat
         
         emit('chat_started', {
