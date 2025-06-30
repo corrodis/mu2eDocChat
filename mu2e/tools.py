@@ -4,22 +4,17 @@ import numpy as np
 from pathlib import Path
 from dotenv import load_dotenv
 from .utils import get_data_dir, convert_to_timestamp, get_chroma_path
+from .collections import get_collection, collection_names
+from .docdb import docdb
 from .chunking import chunk_text_simple
-import sqlite3
+import threading
+import time
 from datetime import datetime
-from packaging import version
-if version.parse(sqlite3.sqlite_version) < version.parse("3.35.0"):
-    # hack from https://gist.github.com/defulmere/8b9695e415a44271061cc8e272f3c300
-    __import__('pysqlite3')
-    import sys
-    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-import chromadb
 import tiktoken
+from openai import OpenAI
 from tqdm import tqdm
 
-def getDefaultCollection():
-    client = chromadb.PersistentClient(path=get_chroma_path())
-    return client.get_or_create_collection(name=os.getenv('MU2E_CHROMA_COLLECTION_NAME') or "mu2e_default")
+
 
 
 def saveInCollection(doc, collection=None, chunking_strategy="default"):
@@ -43,6 +38,8 @@ def saveInCollection(doc, collection=None, chunking_strategy="default"):
         base_meta['topics'] = ", ".join(base_meta['topics'])
     if 'keyword' in base_meta:
         base_meta['keyword'] = ", ".join(base_meta['keyword'])
+    if 'authors' in base_meta:
+        base_meta['authors'] = ", ".join(base_meta['authors'])
 
     documents_ = []
     metadatas_ = []
@@ -91,12 +88,25 @@ def saveInCollection(doc, collection=None, chunking_strategy="default"):
             metadatas_.append(chunk_meta)
             ids_.append(chunk_id)
 
-    collection = collection or getDefaultCollection() 
+    if len(ids_) == 0: #no files
+        chunk_meta = base_meta.copy()
+        chunk_meta['file_index'] = -1
+        documents_.append(chunk_meta['abstract'])
+        metadatas_.append(chunk_meta)
+        chunk_id = f"{docid}_{-1}_{0}"
+        ids_.append(chunk_id)
+
+    collection = collection or get_collection() 
 
     if len(ids_) < 1:
         print(f"{docid} has no documents/chunks to store")
         return 
     
+    if len(ids_) > 1000:
+        print(f"{len(ids_)} chunks - thats more than {1000}, that doesn't sound right: {docid}")
+        ids_ = ids_[:1000]
+        metadatas_ = metadatas_[:1000]
+        documents_ = documents_[:1000]
     print(f"Storing {len(ids_)} chunks for document {docid}")
     collection.upsert(
         documents=documents_,
@@ -117,7 +127,7 @@ def loadFromCollection(docid, nodb=False, collection=None, reconstruct_files=Tru
     Returns:
         Document dictionary with reconstructed files or individual chunks
     """
-    collection = collection or getDefaultCollection()
+    collection = collection or get_collection()
 
     if not docid.startswith("mu2e-docdb-"):
         full_docid = f"mu2e-docdb-{docid}"
@@ -306,15 +316,25 @@ def _get_summary_claude(doc, model):
     return doc
 
 
-def generate_from_local(collection=None, chunking_strategy="default", base_path=None, force_reload=False):
+def generate_from_local_all():
+    """wrapper for generate_from_local that automatically generates all non-default collections"""
+    for collection_name in collection_names:
+        if collection_name not in ["default"]:
+            print(f"Generating {collection_name} collection...")
+            c = get_collection(collection_name)
+            generate_from_local(c)
+
+
+def generate_from_local(collection=None, chunking_strategy="default", base_path=None, docid=None):
     """
-    Generate embeddings from all locally stored documents (meta.json files) into a ChromaDB collection.
+    Generate embeddings from locally stored documents (meta.json files) into a ChromaDB collection.
     This is useful for regenerating collections with different settings without re-downloading.
     
     Args:
         collection: ChromaDB collection (uses default if None)
+        chunking_strategy: Strategy for chunking text (default: "default")
         base_path: Base path for documents (defaults to ~/.mu2e/data)
-        force_reload: If True, reload all documents even if they already exist in the collection
+        docid: Specific document ID to process (e.g., "mu2e-docdb-12345"). If None, processes all documents.
     Returns:
         int: Number of documents successfully processed
     """
@@ -324,14 +344,27 @@ def generate_from_local(collection=None, chunking_strategy="default", base_path=
         print(f"Data directory {base_dir} does not exist")
         return 0
     
-    # Find all mu2e-docdb-* directories
-    doc_dirs = [d for d in base_dir.iterdir() if d.is_dir() and d.name.startswith('mu2e-docdb-')]
-    
-    if not doc_dirs:
-        print("No documents found in data directory")
-        return 0
+    if docid:
+        # Process specific document
+        if not docid.startswith('mu2e-docdb-'):
+            docid = f"mu2e-docdb-{docid}"
+        
+        doc_dir = base_dir / docid
+        if not doc_dir.exists():
+            print(f"Document directory {doc_dir} does not exist")
+            return 0
+        
+        doc_dirs = [doc_dir]
+        print(f"Generating embeddings for document {docid}")
+    else:
+        # Find all mu2e-docdb-* directories
+        doc_dirs = [d for d in base_dir.iterdir() if d.is_dir() and d.name.startswith('mu2e-docdb-')]
+        
+        if not doc_dirs:
+            print("No documents found in data directory")
+            return 0
 
-    print(f"Generating embeddings for {len(doc_dirs)} documents")
+        print(f"Generating embeddings for {len(doc_dirs)} documents")
     
     processed_count = 0
     
@@ -360,7 +393,55 @@ def generate_from_local(collection=None, chunking_strategy="default", base_path=
             continue
     
     print(f"Successfully processed {processed_count} documents")
+    
+    # Save timestamp
+    collection_name = getattr(collection, 'name', 'default') if collection else 'default'
+    timestamp_file = Path(get_data_dir()) / f"last_generate_{collection_name}.json"
+    Path(get_data_dir()).mkdir(exist_ok=True)
+    
+    with open(timestamp_file, 'w') as f:
+        json.dump({"last_run": datetime.now().isoformat(), "processed": processed_count}, f)
+    
     return processed_count
 
+def start_background_generate(interval_minutes=5, days=1, collection=None, from_local=False):
+    """Start background generation every interval_minutes"""
+    def background_loop():
+        from mu2e import docdb
+        while True:
+            try:
+                print("Running background generate...")
+                if from_local:
+                    generate_from_local(collection=collection)
+                else:
+                    db = docdb(collection=collection)
+                    db.generate(days=days)
+                    print(f"Background generate completed, sleeping for {interval_minutes} minutes")
+            except Exception as e:
+                print(f"Background generate failed: {e}")
+            time.sleep(interval_minutes * 60)
+    
+    thread = threading.Thread(target=background_loop, daemon=True)
+    thread.start()
+    print(f"Started background generate (every {interval_minutes} minutes)")
 
+def get_last_generate_info(collection_name='default'):
+    """Get last generate timestamp info"""
+    try:
+        timestamp_file = Path(get_data_dir()) / f"last_generate_{collection_name}.json"
+        if timestamp_file.exists():
+            with open(timestamp_file, 'r') as f:
+                return json.load(f)
+        return {"last_run": None}
+    except:
+        return {"last_run": None}
 
+def getOpenAIClient(base_url=None, api_key=None):
+    load_dotenv()
+    base_url = base_url or os.getenv('MU2E_CHAT_BASE_URL', 'http://localhost:55019/v1')
+    api_key = api_key or os.getenv('MU2E_CHAT_API_KEY', 'whatever+random')
+        
+    return OpenAI(
+        base_url=base_url,
+        api_key=api_key
+    )

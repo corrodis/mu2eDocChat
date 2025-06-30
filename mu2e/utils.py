@@ -3,6 +3,21 @@ import os
 from datetime import datetime
 from typing import Union, Optional
 
+import sqlite3
+from packaging import version
+if version.parse(sqlite3.sqlite_version) < version.parse("3.35.0"):
+    # hack from https://gist.github.com/defulmere/8b9695e415a44271061cc8e272f3c300
+    __import__('pysqlite3')
+    import sys
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+import chromadb
+
+def get_log_dir():
+    log_dir = os.getenv('MU2E_LOG_DIR')
+    if log_dir:
+        return Path(log_dir)
+    return Path.home() / '.mu2e' / 'logs'
+
 def get_data_dir():
     """Get the data directory for docdb storage, creating it if necessary."""
     # First priroty is the environment variable
@@ -37,7 +52,6 @@ def get_chroma_path():
     default_dir = Path.home() / '.mu2e' / 'chroma'
     default_dir.mkdir(parents=True, exist_ok=True)
     return default_dir
-
 
 def convert_to_timestamp(date_input: Union[str, datetime, int]) -> Optional[int]:
     """
@@ -77,3 +91,99 @@ def convert_to_timestamp(date_input: Union[str, datetime, int]) -> Optional[int]
                     return None
     
     return None
+
+def list_to_search_result(docs, enhence=0):
+    n_results = len(docs)
+    
+    # Extract basic fields
+    documents = []
+    ids = []
+    metadata = []
+    
+    for i, doc in enumerate(docs):
+        
+        # Create ID with chunk info
+        doc_id = doc.get('doc_id', f"mu2e-docdb-{doc.get('id', '')}")
+        ids.append(f"{doc_id}")
+        
+        doc_ = None
+        if enhence > 0:
+            from .tools import load2
+            doc_ = load2(doc_id, nodb=True)
+            if doc_:
+                meta = {k: v for k, v in doc_.items() if k != 'files'}
+                meta['link'] = f"https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid=${doc_['docid']}"
+
+                text = ""
+                filenames = []
+                if enhence > 1: # also add the content
+                    if 'files' in doc_:
+                        for file in doc_['files']:
+                            if 'filename' in file:
+                                text +=  "File: " + file['filename'] + ": " + file['text']
+                                filenames.append(file['filename'])
+                    meta['filename'] = ", ".join(filenames)
+                documents.append(text)
+
+        if not doc_: # stick to what we get from the list 
+            # Convert datetime to timestamp if present
+            print(doc)
+            last_updated = doc.get('last_updated')
+            if last_updated:
+                timestamp = int(last_updated.timestamp())
+            else:
+                timestamp = 0
+            
+            # Build metadata dictionary
+            meta = {
+                'created_timestamp': timestamp,
+                'revised_timestamp': timestamp,
+                'revised_meta': last_updated.strftime('%d %b %Y, %H:%M') if last_updated else '',
+                'version': 1,
+                'title': doc.get('tite', doc.get('title', '')),
+                'created': last_updated.strftime('%d %b %Y, %H:%M') if last_updated else '',
+                'docid_str': f"Mu2e-doc-{doc.get('id', '')}-v1",
+                'doc_id': doc.get('doc_id', ''),
+                'abstract': '',  # Not available in source format
+                'topics': ', '.join(doc.get('topics', [])),
+                'revised_content': last_updated.strftime('%d %b %Y, %H:%M') if last_updated else '',
+                'link': doc.get('link:', ''),
+                'doc_type': 'mu2e-docdb',
+                'filename': doc.get('filename:', ''),
+            }
+            documents.append('')
+            
+        metadata.append(meta)
+        
+    
+    return {
+        'query': 'list',
+        'n_results': n_results,
+        'documents': documents,
+        'distances': [1.0]*n_results,  # Ensure same length
+        'ids': ids,
+        'metadata': metadata
+    }
+
+
+def should_add_image_descriptions():
+    """Check if image descriptions should be added based on environment variables"""
+    image_llm_url = os.getenv('MU2E_IMAGE_LLM_URL')
+    image_descriptions_enabled = os.getenv('MU2E_IMAGE_DESCRIPTION', 'true').lower() == 'true'
+    return image_llm_url is not None and image_descriptions_enabled
+
+
+def getOpenAIClientForImages():
+    """Get OpenAI client configured for image description API"""
+    from openai import OpenAI
+    
+    base_url = os.getenv('MU2E_IMAGE_LLM_URL')
+    if not base_url:
+        raise ValueError("MU2E_IMAGE_LLM_URL not set")
+    
+    api_key = os.getenv('MU2E_IMAGE_LLM_API_KEY', 'dummy-key')
+    
+    return OpenAI(
+        base_url=base_url,
+        api_key=api_key
+    )

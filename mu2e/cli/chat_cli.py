@@ -28,7 +28,7 @@ async def health_check():
         
         if "unreachable" in status["openai_api"]["status"]:
             print(f"  - OpenAI API not reachable. Check if your API server is running at {status['openai_api']['url']}")
-            print(f"  - if you are usiing an ssh tunnel, check that the port is forwarded")
+            print(f"  - if you are using an ssh tunnel, check that the port is forwarded")
             print(f"  - Set MU2E_CHAT_BASE_URL environment variable if using a different URL")
         
         if "unreachable" in status["mcp_server"]["status"]:
@@ -42,8 +42,16 @@ async def health_check():
 
 async def chat_main(args):
     """Main chat function."""
-    # Create chat instance
-    chat = Chat()
+    # Get user context for CLI
+    import getpass
+    import os
+    
+    user_context = {
+        "user_name": os.getenv('USER') or getpass.getuser()
+    }
+    
+    # Create chat instance with user context
+    chat = Chat(user_context=user_context)
     shutdown_requested = False
 
     def signal_handler(signum, frame):
@@ -63,7 +71,7 @@ async def chat_main(args):
         sys.exit(1)
     try:
         if args.query:
-            # One-off question mode
+            # One-off question mode  
             response = await chat.chat(args.query)
             print(response)
         else:

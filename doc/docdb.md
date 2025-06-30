@@ -29,21 +29,56 @@ print(doc['topics'])       # List of topics
 
 ## RAG & Local Database/Vector-Storage
 In order to perform Retrieval-Augmented Generation (RAG) style searches, a local vector-storage needs to be generated.
-The location if the this database can either be set by setting MU2E_DATA_DIR or, if that is not set, `~/.mu2e/data` is used.
-The generation of the embedings needs access to a embeding-model (so far openAI or Argo [TODO]).
+The location can be set by setting MU2E_DATA_DIR or, if not set, `~/.mu2e/data` is used.
 
-In order to use openAI OPENAI_API_KEY needs to be set.
+Multiple embedding collections are supported:
+- **default**: Local embeddings (256 token context)
+- **argo**: ANL Argo API (8000+ token context, requires credentials)
+- **multi-qa**: SentenceTransformer embeddings (512 token context)
 
 ### Example: generating local vector database
-By default, it will be stored in `~/.mu2e/data`. The default location can be modifed by setting MU2E_DATA_DIR.
 ```python
 from mu2e.docdb import docdb
+from mu2e.collections import get_collection
 
+# Generate with default collection
 db = docdb()
-
-# Generate all the embedings from all documents of the last 1 day
 db.generate(days=1)
+
+# Generate with Argo collection (requires ANL access)
+db_argo = docdb(collection=get_collection('argo'))
+db_argo.generate(days=1)
+
+# Generate with multi-qa collection
+db_multiqa = docdb(collection=get_collection('multi-qa'))
+db_multiqa.generate(days=1)
 ```
+
+### CLI Usage
+
+#### Generate from DocDB (downloads recent documents)
+```bash
+mu2e-docdb --collection=default generate --days=1
+mu2e-docdb --collection=argo generate --days=1
+mu2e-docdb --collection=multi-qa generate --days=1
+
+# Force reload documents even if they exist locally
+mu2e-docdb --collection=argo generate --days=7 --force-reload
+```
+
+#### Generate from Local Cache (faster, uses previously downloaded documents)
+```bash
+# Generate specific collection from local documents
+mu2e-docdb --collection=argo generate-local
+mu2e-docdb --collection=multi-qa generate-local
+
+# Generate ALL non-default collections from local documents (convenience command)
+mu2e-docdb generate-local-all
+```
+
+**Notes:** 
+- `generate-local` commands use documents already downloaded and cached locally in `~/.mu2e/data`. This is much faster since it skips the DocDB download step and only regenerates embeddings with different models/settings.
+- `--force-reload` option forces re-downloading documents from DocDB even if they already exist locally. Useful when documents have been updated or when local cache is corrupted.
 
 ### Example: RAG
 Example how to perform RAG based on the local vector storage (see above).

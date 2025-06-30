@@ -3,8 +3,9 @@ Search and retrieval interface for ChromaDB collections with filtering capabilit
 """
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Union
-from .tools import getDefaultCollection
-from .utils import convert_to_timestamp
+from .collections import get_collection
+from .utils import convert_to_timestamp, list_to_search_result
+from .docdb import docdb
 
 
 def search(
@@ -30,7 +31,7 @@ def search(
     Returns:
         Dictionary with search results including documents, metadata, distances, and ids
     """
-    collection = collection or getDefaultCollection()
+    collection = collection or get_collection()
     
     # Build where clause from filters
     where_clause = _build_where_clause(
@@ -83,7 +84,7 @@ def search_fulltext(
     Returns:
         Dictionary with search results matching search() format
     """
-    collection = collection or getDefaultCollection()
+    collection = collection or get_collection()
     
     # Build where clause from filters
     where_clause = _build_where_clause(
@@ -165,6 +166,88 @@ def search_by_date(
         date_range=date_range,
         **kwargs
     )
+
+def search_list(days=1, enhence=2, db=None):
+    if not db:
+        db = docdb()
+    return list_to_search_result(
+            db.list_latest(days=days),
+            enhence=enhence)
+
+
+def parse_web_filters(filter_string: str) -> Dict[str, Any]:
+    """
+    Parse web-style filter string to ChromaDB format.
+    
+    Examples:
+        "authors:Smith" -> {"authors": {"$contains": "Smith"}}
+        "authors:Smith title:meeting" -> {"$and": [{"authors": {"$contains": "Smith"}}, {"title": {"$contains": "meeting"}}]}
+        "date_after:2024-01-01" -> returns date_range parameter format
+    
+    Args:
+        filter_string: String with space-separated field:value pairs
+        
+    Returns:
+        Dictionary with 'filters' and 'date_range' keys for use with search()
+    """
+    if not filter_string or not filter_string.strip():
+        return {"filters": None, "date_range": None}
+    
+    conditions = []
+    date_conditions = {}
+    
+    # Split by spaces and extract field:value pairs
+    import re
+    pairs = re.findall(r'(\w+):([^\s]+)', filter_string)
+    
+    for field, value in pairs:
+        # Handle special date filters
+        if field == 'date_after':
+            date_conditions['start'] = value
+            continue
+        elif field == 'date_before':
+            date_conditions['end'] = value
+            continue
+        
+        # Map field names to actual metadata field names
+        field_mapping = {
+            'docid': 'docid',
+            'authors': 'authors', 
+            'topics': 'topics',
+            'title': 'title',
+            'filename': 'filename',
+            'abstract': 'abstract'
+        }
+        
+        actual_field = field_mapping.get(field, field)
+        
+        # For exact matches on numeric fields like docid
+        if field == 'docid':
+            try:
+                # Try to convert to int for exact match
+                int_value = int(value)
+                conditions.append({actual_field: {"$eq": int_value}})
+            except ValueError:
+                # Fall back to string contains
+                conditions.append({actual_field: {"$contains": value}})
+        else:
+            # Use contains for text fields
+            conditions.append({actual_field: {"$contains": value}})
+    
+    # Build filters dict
+    filters = None
+    if conditions:
+        if len(conditions) == 1:
+            filters = conditions[0]
+        else:
+            filters = {"$and": conditions}
+    
+    # Build date_range dict
+    date_range = None
+    if date_conditions:
+        date_range = date_conditions
+    
+    return {"filters": filters, "date_range": date_range}
 
 
 def _build_where_clause(

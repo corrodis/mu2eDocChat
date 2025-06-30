@@ -11,7 +11,8 @@ import mu2e.search as search
 results = search.search("muon conversion", n_results=10)
 
 # Use custom collection
-c = anl.get_collection()
+from mu2e.collections import get_collection
+c = get_collection('argo')
 results = search.search("detector design", collection=c, n_results=5)
 ```
 

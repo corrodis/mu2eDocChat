@@ -6,7 +6,7 @@ import io
 from urllib.parse import quote
 from datetime import datetime
 import os
-from . import parser
+from .parsers import parser
 from .utils import get_data_dir
 
 class docdb:
@@ -284,12 +284,13 @@ class docdb:
         fields = {"abstract":{"search":"Abstract:",          "list":False},
                   "files":   {"search":"Files in Document:", "list":True},
                   "topics":  {"search":"Topics:",            "list":True},
+                  "authors":  {"search":"Authors:",          "list":True},
                   "keyword": {"search":"Keywords:",          "list":True}
                  }
         for field in fields:
             key = soup.find('dt', class_='InfoHeader', string=fields[field]["search"])
             if key:
-                if field == "topics":
+                if field in ["topics","authors"]:
                     tag = key.find_next('ul')
                 else:
                     tag = key.find_next('dd')
@@ -305,6 +306,8 @@ class docdb:
                         else:
                             result[field] = [item.text for item in tag.find_all('a')]
         
+        if "docid_str" not in result:
+            return None
         docid_str_split = result["docid_str"].split("-")
         result["docid"]  = int(docid_str_split[2])
         result["version"] = int(docid_str_split[3][1:])
@@ -397,26 +400,27 @@ class docdb:
     def parse_files(self, doc, add_image_descriptions=None):
         """
         Runs all implemented parsings.
-        """
-        doc_ = self.parse_pdf_slides(doc, add_image_descriptions)
-        # TODO: add additional document type parsings
-        return doc_
-    
-    def parse_pdf_slides(self, doc, add_image_descriptions=None):
-        """
-        Uses mu2e.parsers.pdf to parse all pdf documents of a docdb. Adds the parsed text to the doc dict. 
-
+        
         Args:
-            doc (dict): out put from get
-            add_image_descriptions(str, optional): if set to a method [claude-sonnet, claude-haiku, openAI-o4Minin] the corresponding LLM is used to generate image descriptions.
+            doc: Document dictionary with files
+            add_image_descriptions (bool): Whether to generate AI descriptions for images
+                                         If None, uses environment variable settings
         """
+        from .utils import should_add_image_descriptions
+        
+        if add_image_descriptions is None:
+            add_image_descriptions = should_add_image_descriptions()
+        
         for i, file in enumerate(doc['files']):
-            if file['type'] == "pdf":
-                p = parser.pdf(file['document'])
-                text_out,_ = p.get_sldies_text()
-                if add_image_descriptions:
-                    text_out = p.add_image_descriptions()
+            try:
+                p = parser(file['document'], file['type'])
+                text_out, images = p.get_text()
+                if add_image_descriptions and images:
+                    text_out = p.add_image_descriptions(text_out, images)
                 doc['files'][i]['text'] = text_out
+            except Exception as e:
+                print(e)
+                continue
         return doc
   
     def saveFiles(self, doc):
@@ -462,21 +466,25 @@ class docdb:
         #rag.doc_generate_embedding(docid)
         #print(f"Data saved to {full_path}")
     
-    def get_and_parse(self, docid):
+    def get_and_parse(self, docid, add_image_descriptions=False):
         doc_full = self.get(docid)
-        self.parse_files(doc_full)
+        if doc_full is None:
+            return None
+        self.parse_files(doc_full, add_image_descriptions=add_image_descriptions)
         return doc_full
 
-    def get_parse_store(self, docid, save_raw=False):
+    def get_parse_store(self, docid, save_raw=False, add_image_descriptions=False):
         from mu2e import tools
-        doc_full = self.get_and_parse(docid)
+        doc_full = self.get_and_parse(docid, add_image_descriptions=add_image_descriptions)
+        if doc_full is None:
+            return None
         tools.saveInCollection(doc_full, self.collection)
         if save_raw:
             self.saveMetaJson(doc_full)
             self.saveFiles(doc_full)
         return doc_full
 
-    def generate(self, days=10, force_reload=False, save_raw=True):
+    def generate(self, days=10, force_reload=False, save_raw=True, add_image_descriptions=False):
         from mu2e import tools
         latest = self.list_latest(days)
         for doc in latest:
@@ -487,7 +495,9 @@ class docdb:
                 doc_ = tools.load2("mu2e-docdb-"+str(doc['id']), nodb=True, collection=self.collection) # check if we already have this cached
                 if not doc_ is None:
                     print("mu2e-docdb-"+str(doc['id'])+" - present")
+                else:
+                    print("mu2e-docdb-"+str(doc['id'])+" - get, parse, store...")
             if doc_ is None:
-                self.get_parse_store(doc['id'], save_raw=save_raw)
+                self.get_parse_store(doc['id'], save_raw=save_raw, add_image_descriptions=add_image_descriptions)
             
     

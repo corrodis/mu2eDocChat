@@ -266,10 +266,41 @@ class slack:
         try:
             # Create chat instance for this thread if it doesn't exist
             if "chat" not in self.threads[ts]:
-                chat_instance = self.processor()
+                # Get user info for context
+                user = message["user"]
+                channel = self.threads[ts]["channel"]
+                
+                try:
+                    user_info = self.client.users_info(user=user)["user"]
+                    user_name = user_info.get("real_name") or user_info.get("name", "Unknown")
+                except Exception:
+                    user_name = "Unknown"
+                
+                # Build user context
+                user_context = {
+                    "user_name": user_name,
+                    "interface":"slack"
+                }
+                
+                # Add Slack channel URL and message URL if not a DM
+                if not self._is_direct_message(channel):
+                    try:
+                        channel_info = self.client.conversations_info(channel=channel)["channel"]
+                        channel_name = channel_info.get("name", "unknown")
+                        user_context["slack_channel_name"] = channel_name
+                        # Slack channel URL format
+                        workspace_domain = self.client.auth_test()
+                        user_context["slack_workspace_name"] = workspace_domain["name"]
+                        user_context["slack_message_ts"] = ts
+                        # Add message URL
+                        ts_for_url = ts.replace(".", "")
+                        user_context["slack_message_url"] = f"{workspace_domain['url']}archives/{channel}/p{ts_for_url}"
+                    except Exception:
+                        pass  # Skip if we can't get channel info
+                
+                chat_instance = self.processor(user_context=user_context)
                 
                 # Set up tool use callback for this chat instance
-                channel = self.threads[ts]["channel"]
                 async def tool_callback(tool_name, arguments):
                     await self._tool_use_notification(tool_name, arguments, channel, ts)
                 
@@ -282,7 +313,7 @@ class slack:
             
             print(f"Processing message in thread {ts}: {text}")
             
-            # Get response from chat
+            # Get response from chat (context was set at creation time)
             answer = await self.threads[ts]["chat"].chat(text)
             
             if answer:

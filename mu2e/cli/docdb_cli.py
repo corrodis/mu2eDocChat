@@ -1,23 +1,31 @@
 # mu2e/cli.py
 import argparse
 from mu2e.docdb import docdb
-from mu2e import search, tools, anl
+from mu2e import search, tools
+from mu2e.collections import get_collection, collection_names
 
 def main():
     parser = argparse.ArgumentParser(description='Mu2e DocDB utilities')
-    parser.add_argument('--argo', action='store_true',
-                       help='Use Argo embeddings instead of default collection')
-    parser.add_argument('--argo-remote', action='store_true',
-                       help='Use Argo embeddings instead of default collection, connect to argo-proxy through ssh tunnel')
+    parser.add_argument('--collection', type=str, default='default',
+                       help=f'Collection to use (choices: {", ".join(collection_names)}, default: default)')
     subparsers = parser.add_subparsers(dest='command', help='Commands')
     
     # Generate database
     generate_parser = subparsers.add_parser('generate', help='Generate embeddings for recent documents')
     generate_parser.add_argument('--days', type=int, default=30,
                                help='Number of days to look back (default: 30)')
+    generate_parser.add_argument('--force-reload', action='store_true',
+                               help='Force reload documents even if they already exist locally')
+    generate_parser.add_argument('--no-image-descriptions', action='store_true',
+                               help='Disable AI image descriptions (enabled by default if MU2E_IMAGE_LLM_URL is set)')
+    generate_parser.add_argument('--docid', type=int,
+                               help='Generate specific document by ID (forces reload)')
     
     # Generate from local
     local_parser = subparsers.add_parser('generate-local', help='Generate embeddings from locally stored documents')
+    
+    # Generate from local for all collections
+    local_all_parser = subparsers.add_parser('generate-local-all', help='Generate embeddings for all non-default collections from locally stored documents')
     
     # Vector Search
     search_parser = subparsers.add_parser('search', help='Vector search in documents')
@@ -37,32 +45,43 @@ def main():
     args = parser.parse_args()
     
     if args.command == 'generate':
-        collection = anl.get_collection() if args.argo else None
-        collection = anl.get_collection(url="http://localhost:55019/v1/embed") if args.argo_remote else\
-                     anl.get_collection() if args.argo else None
-        collection_type = "Argo" if args.argo or args.argo_remote else "default"
-        print(f"Generating {collection_type} embeddings for documents from the last {args.days} days...")
+        from mu2e.utils import should_add_image_descriptions
+        
+        collection = get_collection(args.collection) if args.collection != 'default' else None
+        
+        # Determine if image descriptions should be used
+        add_image_descriptions = should_add_image_descriptions() and not args.no_image_descriptions
+        
         db = docdb(collection=collection)
-        db.generate(days=args.days)
+        
+        if args.docid:
+            # Generate specific document by ID (always force reload)
+            image_text = " (with image descriptions)" if add_image_descriptions else ""
+            print(f"Generating {args.collection} embeddings for document {args.docid} (force reload){image_text}...")
+            db.get_parse_store(args.docid, save_raw=True, add_image_descriptions=add_image_descriptions)
+        else:
+            # Generate recent documents
+            force_text = " (force reload)" if args.force_reload else ""
+            image_text = " (with image descriptions)" if add_image_descriptions else ""
+            print(f"Generating {args.collection} embeddings for documents from the last {args.days} days{force_text}{image_text}...")
+            db.generate(days=args.days, force_reload=args.force_reload, add_image_descriptions=add_image_descriptions)
+        
         print("Done!")
         
     elif args.command == 'generate-local':
-        collection = anl.get_collection() if args.argo else None
-        collection = anl.get_collection(url="http://localhost:55019/v1/embed") if args.argo_remote else\
-                     anl.get_collection() if args.argo else None
-        collection_type = "Argo" if args.argo or args.argo_remote else "default"
-        collection_type = "Argo" if args.argo else "default"
-        print(f"Generating {collection_type} embeddings from locally stored documents...")
+        collection = get_collection(args.collection) if args.collection != 'default' else None
+        print(f"Generating {args.collection} embeddings from locally stored documents...")
         processed = tools.generate_from_local(collection=collection)
         print(f"Done! Processed {processed} documents")
         
+    elif args.command == 'generate-local-all':
+        print("Generating embeddings for all non-default collections from locally stored documents...")
+        tools.generate_from_local_all()
+        print("Done! Processed all collections")
+        
     elif args.command == 'search':
         # Select collection
-        collection = anl.get_collection() if args.argo else None
-        collection = anl.get_collection(url="http://localhost:55019/v1/embed") if args.argo_remote else\
-                     anl.get_collection() if args.argo else None
-        collection_type = "Argo" if args.argo or args.argo_remote else "default"
-        collection_type = "Argo" if args.argo else "default"
+        collection = get_collection(args.collection) if args.collection != 'default' else None
         
         # Perform search
         if args.fulltext:
@@ -70,7 +89,7 @@ def main():
             results = search.search_fulltext(args.query, n_results=args.top, collection=collection)
             search_type = "Full-text"
         else:
-            print(f"Vector search using {collection_type} embeddings for: '{args.query}'")
+            print(f"Vector search using {args.collection} embeddings for: '{args.query}'")
             # Vector search with optional date filtering
             if args.days:
                 results = search.search_by_date(args.query, days_back=args.days, 

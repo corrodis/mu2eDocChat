@@ -10,7 +10,7 @@ import logging
 import subprocess
 import sys
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from mcp import ClientSession
@@ -18,6 +18,8 @@ from mcp.client.streamable_http import streamablehttp_client
 from contextlib import AsyncExitStack
 import aiohttp
 from dotenv import load_dotenv
+from .utils import get_log_dir
+from .tools import getOpenAIClient
 
 # Load environment variables
 load_dotenv()
@@ -40,11 +42,18 @@ class MCPClient:
             server.mcp_session = await server._exit_stack.enter_async_context(session_context)
             await server.mcp_session.initialize()
             server._connected = True
-            print(f"Connected to MCP server at {url}")
+            # Don't print connection messages during health checks to reduce noise
             return server
-        except Exception as e:
-            print(f"Failed to connect to MCP server at {url}: {e}")
+        except (Exception, asyncio.CancelledError) as e:
+            # Clean up properly on failure
+            if hasattr(server, '_exit_stack') and server._exit_stack is not None:
+                try:
+                    await server._exit_stack.aclose()
+                except:
+                    pass
+                server._exit_stack = None
             server._connected = False
+            server.mcp_session = None
             return server
 
     async def close(self):
@@ -88,19 +97,17 @@ class Chat:
         max_tokens: int = 2000,
         mcp_server_url: str = None,
         mcp_timeout_seconds: int = 10,
-        api_key: str = None
+        api_key: str = None,
+        user_context: dict = None
     ):
         # Load from environment with defaults (chat-specific variables)
         load_dotenv()
         self.base_url = base_url or os.getenv('MU2E_CHAT_BASE_URL', 'http://localhost:55019/v1')
         self.model = model or os.getenv('MU2E_CHAT_MODEL', 'argo:gpt-4o')
         self.mcp_server_url = mcp_server_url or os.getenv('MU2E_CHAT_MCP_URL', 'http://localhost:1223/mcp/')
-        self.api_key = api_key or os.getenv('MU2E_CHAT_API_KEY', os.getenv('OPENAI_API_KEY', 'whatever+random'))
+        #self.api_key = api_key or os.getenv('MU2E_CHAT_API_KEY', os.getenv('OPENAI_API_KEY', 'whatever+random'))
         
-        self.client = OpenAI(
-            base_url=self.base_url,
-            api_key=self.api_key
-        )
+        self.client = getOpenAIClient() 
         self.mcp = None
         self.tools = []
         self.temperature = temperature
@@ -109,27 +116,35 @@ class Chat:
         # Conversation history
         self.messages: List[Dict[str, Any]] = []
         
+        # Context information
+        self.context_info = user_context.copy() if user_context else {}
+        
+        # Chat logging
+        self.logging_level = int(os.getenv('MU2E_CHAT_ENABLE_LOGGING', 1)) # 0=off, 1=at the end, 2=after each interaction
+        self.log_dir = get_log_dir()
+        self.conversation_start_time = datetime.now()
+        self.conversation_id = f"chat_{self.conversation_start_time.strftime('%Y%m%d_%H%M%S')}_{id(self)}"
+        
+        # Create log directory if it doesn't exist
+        if self.logging_level > 0:
+            os.makedirs(self.log_dir, exist_ok=True)
         
         #self.mcp_session: Optional[ClientSession] = None
         self.available_tools: List[Dict[str, Any]] = []
         
-        # System prompt
-        self.system_prompt =\
+        # Base system prompt (will be enhanced with context)
+        self.base_system_prompt =\
         """You are a helpful AI assistant for the Mu2e experiment with access to document search tools.
 
-Use these tools proactively to find information that will help answer user questions. 
-Ground your answers in information from the tools and be concise.
+Use these tools proactively to find information that will help answer user questions. Ground your answers in information from the tools and be concise.
 
-When searching:
-- Use semantic search for conceptual questions about physics, procedures, or analysis
-- Use fulltext_search for specific component names, numbers, or exact terms
-- Always search recent documents first, then expand timeframe if needed
+Use actual tool responses provided in the conversation. Make additional tool calls only through the proper API when needed for supplementary information.
 
-Use multiple tool calls when needed or ask the user for clarification.
+Ask the user for clarification when needed.
 
 Provide specific information rather than generic responses. If documents contain conflicting information, note the differences and cite both sources.
 
-When answering based on search results, briefly explain what you searched for.
+If you make an error or the user corrects you, carefully review the available information before responding.
 
 Always cite documents with their IDs and links using this format: 
 [mu2e-docdb-12345](https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid=12345)"""
@@ -146,7 +161,54 @@ Always cite documents with their IDs and links using this format:
         """
         self._tool_use_callback = callback
 
+    def _build_system_prompt(self, additional_context=None) -> str:
+        """Build system prompt with current date/time and user context."""
+        prompt = self.base_system_prompt
+        
+        # Add current date/time
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S %Z")
+        prompt += f"\n\nCurrent date and time: {current_time}"
+        
+        # Merge stored context with any additional context
+        context = self.context_info.copy()
+        if additional_context:
+            context.update(additional_context)
+        
+        # Add context information
+        prompt += "\n\n Context: " + json.dumps(context, indent=2)
+                
+        return prompt
+
+    def _save_conversation_log(self):
+        """Save conversation to JSON file"""
+        if self.logging_level == 0 or not self.messages:
+            return
+            
+        try:
+            log_data = {
+                "conversation_id": self.conversation_id,
+                "start_time": self.conversation_start_time.isoformat(),
+                "end_time": datetime.now().isoformat(),
+                "context_info": self.context_info,
+                "system_message": self._build_system_prompt(),
+                "messages": self.messages,
+                "model": self.model,
+                "base_url": self.base_url
+            }
+            
+            log_file_path = os.path.join(self.log_dir, f"{self.conversation_id}.json")
+            with open(log_file_path, 'w') as f:
+                json.dump(log_data, f, indent=2)
+                
+            print(f"Conversation logged to: {log_file_path}")
+            
+        except Exception as e:
+            print(f"Warning: Failed to save conversation log: {e}")
+
     async def cleanup(self):
+        # Save conversation log before cleanup
+        self._save_conversation_log()
+        
         if self.mcp is not None:
             try:
                 await self.mcp.close()
@@ -158,18 +220,19 @@ Always cite documents with their IDs and links using this format:
     async def createMcp(self):
         self.mcp = await MCPClient.create(self.mcp_server_url)
 
-        tool_list = await self.mcp.list_tools()
-        self.tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.inputSchema
+        if self.mcp._connected:
+            tool_list = await self.mcp.list_tools()
+            self.tools = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.inputSchema
+                    }
                 }
-            }
-            for tool in tool_list.tools
-        ]
+                for tool in tool_list.tools
+            ]
 
     async def health_check(self) -> Dict[str, Any]:
         """Check health of all services."""
@@ -208,7 +271,7 @@ Always cite documents with their IDs and links using this format:
         
         return status
         
-    async def chat(self, user_message: str) -> str:
+    async def chat(self, user_message: str, user_context=None) -> str:
         """
         Send a message and get a response with automatic tool handling.
         
@@ -223,9 +286,10 @@ Always cite documents with their IDs and links using this format:
 
         await self._checkMCP()
         
-        # Prepare messages with system prompt
+        # Prepare messages with dynamic system prompt
+        system_prompt = self._build_system_prompt(user_context)
         full_messages = [
-            {"role": "system", "content": self.system_prompt}
+            {"role": "system", "content": system_prompt}
         ] + self.messages
         
         try:
@@ -244,21 +308,38 @@ Always cite documents with their IDs and links using this format:
             if message.tool_calls:
                 
                 # Add assistant message with tool calls
-                self.messages.append({
-                    "role": "assistant",
-                    "content": message.content,
-                    "tool_calls": [
+                # anthropic
+                if any(model_name in self.model for model_name in ["claude", "sonnet", "opus"]):
+                    content = []
+                    content.extend([
                         {
+                            "type": "tool_use",
                             "id": tc.id,
-                            "type": tc.type,
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments
-                            }
+                            "name": tc.function.name,
+                            "input": json.loads(tc.function.arguments)
                         }
                         for tc in message.tool_calls
-                    ]
-                })
+                    ])
+                    self.messages.append({
+                        "role": "assistant",
+                        "content": content
+                    })
+                else: # openAI
+                    self.messages.append({
+                        "role": "assistant",
+                        "content": message.content or '',
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": tc.type,
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments
+                                }
+                            }
+                            for tc in message.tool_calls
+                        ]
+                    })
                 
                 # Execute each tool call
                 for tool_call in message.tool_calls:
@@ -281,18 +362,29 @@ Always cite documents with their IDs and links using this format:
                         content = tool_result.content[0].text if tool_result.content else "No content"
                     except Exception as e:
                         content = f"Tool error: {str(e)}"
-                    
-                    # Add tool result to conversation
-                    self.messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": content
-                    })
+                        
+                    # if anthropic
+                    if any(model_name in self.model for model_name in ["claude", "sonnet", "opus"]):
+                        self.messages.append({
+                            "role": "user",
+                            "content": [{
+                                "type": "tool_result",
+                                "tool_use_id": tool_call.id,
+                                "content": content
+                            }]
+                        })
+                    else:
+                        # Add openAI tool result to conversation
+                        self.messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": content
+                        })
                 
                 # Get final response after tool execution
                 final_response = self.client.chat.completions.create(
                     model=self.model,
-                    messages=[{"role": "system", "content": self.system_prompt}] + self.messages,
+                    messages=[{"role": "system", "content": system_prompt}] + self.messages,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens
                 )
@@ -300,12 +392,17 @@ Always cite documents with their IDs and links using this format:
                 final_content = final_response.choices[0].message.content or ""
                 self.messages.append({"role": "assistant", "content": final_content})
                 
+                if self.logging_level >= 3:
+                    self._save_conversation_log()
                 return final_content
                 
             else:
                 # No tool calls, regular response
                 content = message.content or ""
                 self.messages.append({"role": "assistant", "content": content})
+                
+                if self.logging_level >= 2:
+                    self._save_conversation_log()
                 return content
                 
         except Exception as e:
