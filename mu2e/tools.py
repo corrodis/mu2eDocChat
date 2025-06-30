@@ -325,6 +325,65 @@ def generate_from_local_all():
             generate_from_local(c)
 
 
+def load_from_file(base_path=None, docid=None):
+    base_dir = Path(base_path if base_path else get_data_dir())
+
+    if not base_dir.exists():
+        print(f"Data directory {base_dir} does not exist")
+        return None
+    
+    if not docid.startswith('mu2e-docdb-'):
+        docid = f"mu2e-docdb-{docid}"
+
+    doc_dir = base_dir / docid
+    if not doc_dir.exists():
+        print(f"Document directory {doc_dir} does not exist")
+        return None
+    
+    meta_file = doc_dir / "meta.json"
+    if not meta_file.exists():
+        print(f"meta.json not found in {doc_dir}")
+        return None
+    
+    try:
+        with open(meta_file, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading {docid}: {str(e)}")
+        return None
+
+def iterate_documents(base_path=None, show_progress=True):
+    """
+    Iterator that yields document metadata from locally stored documents.
+    
+    Args:
+        base_path: Base path for documents (defaults to ~/.mu2e/data)
+        show_progress: Whether to show progress bar (default: True)
+        
+    Yields:
+        tuple: (doc_dir_path, document_metadata_dict) for each valid document
+    """
+    base_dir = Path(base_path if base_path else get_data_dir())
+    
+    if not base_dir.exists():
+        print(f"Data directory {base_dir} does not exist")
+        return
+    
+    doc_dirs = [d for d in base_dir.iterdir() if d.is_dir() and d.name.startswith('mu2e-docdb-')]
+    if not doc_dirs:
+        print("No documents found in data directory")
+        return
+    
+    print(f"Found {len(doc_dirs)} documents")
+    iterator = tqdm(doc_dirs, desc="Processing documents") if show_progress else doc_dirs
+
+    for doc_dir in iterator:
+        docid = doc_dir.name
+        doc = load_from_file(base_path=base_path, docid=docid)
+
+        if doc is not None:
+            yield doc
+
 def generate_from_local(collection=None, chunking_strategy="default", base_path=None, docid=None):
     """
     Generate embeddings from locally stored documents (meta.json files) into a ChromaDB collection.
@@ -338,59 +397,42 @@ def generate_from_local(collection=None, chunking_strategy="default", base_path=
     Returns:
         int: Number of documents successfully processed
     """
-    base_dir = Path(base_path if base_path else get_data_dir())
-    
-    if not base_dir.exists():
-        print(f"Data directory {base_dir} does not exist")
-        return 0
-    
-    if docid:
-        # Process specific document
-        if not docid.startswith('mu2e-docdb-'):
-            docid = f"mu2e-docdb-{docid}"
-        
-        doc_dir = base_dir / docid
-        if not doc_dir.exists():
-            print(f"Document directory {doc_dir} does not exist")
-            return 0
-        
-        doc_dirs = [doc_dir]
-        print(f"Generating embeddings for document {docid}")
-    else:
-        # Find all mu2e-docdb-* directories
-        doc_dirs = [d for d in base_dir.iterdir() if d.is_dir() and d.name.startswith('mu2e-docdb-')]
-        
-        if not doc_dirs:
-            print("No documents found in data directory")
-            return 0
-
-        print(f"Generating embeddings for {len(doc_dirs)} documents")
-    
     processed_count = 0
-    
-    for doc_dir in tqdm(doc_dirs, desc="Processing documents"):
-        meta_file = doc_dir / "meta.json"
-        
-        if not meta_file.exists():
-            print(f"Warning: meta.json not found in {doc_dir}")
-            continue
-            
-        try:
-            # Load the document metadata
-            with open(meta_file, 'r') as f:
-                doc = json.load(f)
 
-            doc_ = load2(doc['doc_id'], nodb=True, collection=collection) # check if we already have this cached
-            if not doc_ is None:
-                print(doc['doc_id']+" - present")
+    if docid:
+        doc = load_from_file(base_path=base_path, docid=docid)
+        if doc is None:
+            return 0
+        
+        try:
+            # Check if we already have this cached
+            doc_ = load2(doc['doc_id'], nodb=True, collection=collection)
+            if doc_ is not None:
+                print(f"{doc['doc_id']} - present")
             else:
-                print(doc['doc_id']+" - processing")
+                print(f"{doc['doc_id']} - processing")
                 saveInCollection(doc, collection=collection, chunking_strategy=chunking_strategy)
-            processed_count += 1
+            processed_count = 1
             
         except Exception as e:
-            print(f"Error processing {doc_dir.name}: {str(e)}")
-            continue
+            print(f"Error processing {doc['doc_id']}: {str(e)}")
+            return 0
+    else:
+        # Process all documents
+        for doc in iterate_documents(base_path=base_path):
+            try:
+                # Check if we already have this cached
+                doc_ = load2(doc['doc_id'], nodb=True, collection=collection)
+                if doc_ is not None:
+                    print(f"{doc['doc_id']} - present")
+                else:
+                    print(f"{doc['doc_id']} - processing")
+                    saveInCollection(doc, collection=collection, chunking_strategy=chunking_strategy)
+                processed_count += 1
+                
+            except Exception as e:
+                print(f"Error processing {doc['doc_id']}: {str(e)}")
+                continue
     
     print(f"Successfully processed {processed_count} documents")
     
