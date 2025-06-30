@@ -1,9 +1,39 @@
 # Docdb Interface
 
 A Python client to interact with the Document Database (DocDB). This package allows authentication, document retrieval, and parsing capabilities for documents.
-The cridentials to be used need to be set as environment variables:
-- MU2E_DOCDB_USERNAME
-- MU2E_DOCDB_PASSWORD
+
+## Authentication
+
+The DocDB client uses secure credential storage via the system keyring. Credentials are automatically managed and you'll only need to enter them once per system.
+
+### Setting up credentials
+
+Use the CLI to securely store your DocDB password:
+
+```bash
+# Set password (will prompt for username and password)
+mu2e-docdb set-password
+DocDB username: your_username
+Enter DocDB password for your_username: [hidden input]
+Password saved for user 'your_username'
+```
+
+### Managing credentials
+
+```bash
+# Clear stored password
+mu2e-docdb clear-password
+Username to clear [your_username]: 
+Cleared stored password for user 'your_username'
+```
+
+### Fallback to environment variables
+
+If you prefer environment variables (less secure), you can still use:
+- `MU2E_DOCDB_USERNAME`
+- `MU2E_DOCDB_PASSWORD`
+
+The system will automatically prompt for credentials if none are found in keyring or environment variables.
 
 ## Quick Start
 
@@ -55,6 +85,15 @@ db_multiqa.generate(days=1)
 ```
 
 ### CLI Usage
+
+#### Password Management
+```bash
+# Set DocDB password securely in system keyring
+mu2e-docdb set-password
+
+# Clear stored password
+mu2e-docdb clear-password
+```
 
 #### Generate from DocDB (downloads recent documents)
 ```bash

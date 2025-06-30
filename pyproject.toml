@@ -27,7 +27,8 @@ dependencies = [
     "python-docx",
     "pandas",
     "pillow",
-    "sentence_transformers"
+    "sentence_transformers",
+    "keyring"
 ]
 
 [project.optional-dependencies]
