@@ -10,6 +10,12 @@
 <div class="card">
     <h2>Mu2e DocDB Search</h2>
     
+    <div class="input-group">
+
+        <input type="text" id="searchQuery" placeholder="Enter your search..." class="flex-1">
+        <button onclick="performSearch()" class="btn">Search</button>
+    </div>
+
     <div class="input-group" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
         <div style="display: flex; align-items: center; gap: 1rem;">
             <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 500; color: #495057;">
@@ -41,12 +47,6 @@
                 <input type="number" id="n_results" placeholder="n" value="10" style="width: 100px; padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px;">
             </div>
         </div>
-    </div>
-
-    <div class="input-group">
-
-        <input type="text" id="searchQuery" placeholder="Enter search query..." class="flex-1">
-        <button onclick="performSearch()" class="btn">Search</button>
     </div>
     <div class="input-group">
         <button onclick="toggleFilterHelp()" class="btn-small" style="margin-left: 0.5rem;">?</button>
