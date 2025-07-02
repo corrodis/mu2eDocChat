@@ -1,6 +1,6 @@
 # mu2e/cli.py
 import argparse
-from mu2e.docdb import docdb
+from mu2e.docdb import docdb, get_docdb_credentials, clear_docdb_credentials
 from mu2e import search, tools
 from mu2e.collections import get_collection, collection_names
 
@@ -41,6 +41,12 @@ def main():
     list_parser = subparsers.add_parser('list', help='List recent documents')
     list_parser.add_argument('--days', type=int, default=1,
                            help='Number of days to look back (default: 1)')
+    
+    # Password management
+    set_password_parser = subparsers.add_parser('set-password', help='Set DocDB password in keyring')
+    
+    # Clear password  
+    clear_password_parser = subparsers.add_parser('clear-password', help='Clear stored DocDB password')
     
     args = parser.parse_args()
     
@@ -123,6 +129,35 @@ def main():
             print(f"Last Updated: {doc['last_updated']}")
             print(f"Link: https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid={doc['id']}")
             print("-" * 80)    
+    
+    elif args.command == 'set-password':
+        import getpass
+        import keyring
+        
+        # Always prompt for username
+        username = input("DocDB username: ")
+        
+        # Get password
+        password = getpass.getpass(f"Enter DocDB password for {username}: ")
+        
+        # Store in keyring
+        try:
+            keyring.set_password("mu2e-docdb", username, password)
+            print(f"Password saved for user '{username}'")
+        except Exception as e:
+            print(f"Error saving password: {e}")
+            
+    elif args.command == 'clear-password':
+        import getpass
+        import os
+        
+        # Prompt for username, with default
+        default_user = os.getenv('MU2E_DOCDB_USERNAME') or os.getenv('USER') or getpass.getuser()
+        username = input(f"Username to clear [{default_user}]: ").strip()
+        if not username:
+            username = default_user
+            
+        clear_docdb_credentials(username)
 
     else:
         parser.print_help()

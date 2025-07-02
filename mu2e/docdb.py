@@ -6,8 +6,60 @@ import io
 from urllib.parse import quote
 from datetime import datetime
 import os
+import getpass
+import keyring
 from .parsers import parser
 from .utils import get_data_dir
+
+def get_docdb_credentials():
+    """Get DocDB credentials using keyring, with fallback to environment and interactive prompt"""
+    # Try to get username from environment first, then prompt
+    username = os.getenv('MU2E_DOCDB_USERNAME')
+    if not username:
+        username = os.getenv('USER') or getpass.getuser()
+        if not username:
+            username = input("DocDB username: ")
+    
+    # Service name for keyring storage
+    service_name = "mu2e-docdb"
+    
+    # Try to get password from keyring
+    password = keyring.get_password(service_name, username)
+    
+    if password is None:
+        # Check environment variable as fallback
+        password = os.getenv('MU2E_DOCDB_PASSWORD')
+        
+        if password is None:
+            # Prompt for password
+            print(f"DocDB password not found in keyring for user '{username}'")
+            password = getpass.getpass(f"Enter DocDB password for {username}: ")
+            
+            # Ask if user wants to save to keyring
+            save_choice = input("Save password to system keyring? [y/N]: ").lower().strip()
+            if save_choice in ['y', 'yes']:
+                try:
+                    keyring.set_password(service_name, username, password)
+                    print(f"Password saved to keyring for user '{username}'")
+                except Exception as e:
+                    print(f"Warning: Could not save password to keyring: {e}")
+    
+    return username, password
+
+def clear_docdb_credentials(username=None):
+    """Clear stored DocDB credentials from keyring"""
+    if username is None:
+        username = os.getenv('MU2E_DOCDB_USERNAME') or os.getenv('USER') or getpass.getuser()
+    
+    service_name = "mu2e-docdb"
+    
+    try:
+        keyring.delete_password(service_name, username)
+        print(f"Cleared stored password for user '{username}'")
+    except keyring.errors.PasswordDeleteError:
+        print(f"No stored password found for user '{username}'")
+    except Exception as e:
+        print(f"Error clearing password: {e}")
 
 class docdb:
     """
@@ -50,16 +102,6 @@ class docdb:
         self.session = None
         self.collection = collection # chromadb
         if login:
-            missing = []
-            if not os.getenv('MU2E_DOCDB_USERNAME'):
-                missing.append('MU2E_DOCDB_USERNAME')
-            if not os.getenv('MU2E_DOCDB_PASSWORD'):
-                missing.append('MU2E_DOCDB_PASSWORD')
-            if missing:
-                raise ValueError(
-                    f"Missing required environment variables: {', '.join(missing)}. "
-                    "Please set these environment variables."
-                )
             self.login()
 
     def __del__(self):
@@ -91,10 +133,10 @@ class docdb:
             raise ValueError("Could not find login form")
         login_url = urljoin('https://pingprod.fnal.gov', login_form['action'])
     
-        import mu2e # for docdb_credentials
+        username, password = get_docdb_credentials()
         login_data = {
-            'pf.username': os.getenv('MU2E_DOCDB_USERNAME'),
-            'pf.pass': os.getenv('MU2E_DOCDB_PASSWORD'),
+            'pf.username': username,
+            'pf.pass': password,
             'pf.ok': 'clicked',
             'pf.adapterId': 'FormBased',
             'pf.cancel': ''
