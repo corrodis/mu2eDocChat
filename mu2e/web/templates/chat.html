@@ -381,6 +381,10 @@ function initializeSocket() {
         setWaitingState(false);
     });
     
+    socket.on('tool_usage', function(data) {
+        addMessage('system', `Using tool: ${data.tool_name} with arguments: ${JSON.stringify(data.arguments)}`);
+    });
+    
     socket.on('chat_ended', function(data) {
         // Reset UI
         currentSessionId = null;
