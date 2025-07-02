@@ -208,7 +208,7 @@ def get_available_models():
             {
                 'id': model.id,
                 'name': model.internal_name, 
-                'is_default': model.internal_name == default_model
+                'is_default': model.id == default_model
             }
             for model in models.data
             if model.id not in seen and not seen.add(model.id)
