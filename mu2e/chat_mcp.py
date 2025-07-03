@@ -17,9 +17,10 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from contextlib import AsyncExitStack
 import aiohttp
+import subprocess
 from dotenv import load_dotenv
 from .utils import get_log_dir
-from .tools import getOpenAIClient
+from .tools import getOpenAIClient, token_count
 
 # Load environment variables
 load_dotenv()
@@ -94,11 +95,13 @@ class Chat:
         base_url: str = None,
         model: str = None,
         temperature: float = 0.7,
-        max_tokens: int = 2000,
+        max_tokens: int = 8000,
         mcp_server_url: str = None,
         mcp_timeout_seconds: int = 10,
         api_key: str = None,
-        user_context: dict = None
+        user_context: dict = None,
+        recreate_mcp_per_message: bool = False
+        reduce_tokens: bool = False
     ):
         # Load from environment with defaults (chat-specific variables)
         load_dotenv()
@@ -112,7 +115,9 @@ class Chat:
         self.tools = []
         self.temperature = temperature
         self.max_tokens = max_tokens
-        
+        self.recreate_mcp_per_message = recreate_mcp_per_message
+        self.reduce_tokens = reduce_tokens
+
         # Conversation history
         self.messages: List[Dict[str, Any]] = []
         
@@ -150,7 +155,13 @@ Always cite documents with their IDs and links using this format:
 [mu2e-docdb-12345](https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid=12345)"""
 
     async def _checkMCP(self):
-        if self.mcp is None:
+        if self.mcp is None or self.recreate_mcp_per_message:
+            # Clean up existing MCP if recreating
+            #if self.mcp is not None and self.recreate_mcp_per_message:
+            #    try:
+            #        await self.mcp.close()
+            #    except:
+            #        pass
             await self.createMcp()
 
     def set_tool_use_callback(self, callback):
@@ -258,6 +269,8 @@ Always cite documents with their IDs and links using this format:
             await self._checkMCP()
             if self.mcp._connected:
                 status["mcp_server"]["status"] = "healthy"
+                if self.recreate_mcp_per_message:
+                    await self.mcp.close()
             if self.mcp is None:
                 status["mcp_server"]["status"] = "unreachable"
         except Exception as e:
@@ -298,7 +311,7 @@ Always cite documents with their IDs and links using this format:
                 model=self.model,
                 messages=full_messages,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                #max_tokens=self.max_tokens,
                 tools=self.tools if self.tools else None,
                 tool_choice="auto" if self.tools else None
             )
@@ -362,7 +375,8 @@ Always cite documents with their IDs and links using this format:
                         content = tool_result.content[0].text if tool_result.content else "No content"
                     except Exception as e:
                         content = f"Tool error: {str(e)}"
-                        
+                    
+                    print(f"TOOL USE DONE: {token_count(content)} toekns: {content[:50]}")    
                     # if anthropic
                     if any(model_name in self.model for model_name in ["claude", "sonnet", "opus"]):
                         self.messages.append({
@@ -380,14 +394,19 @@ Always cite documents with their IDs and links using this format:
                             "tool_call_id": tool_call.id,
                             "content": content
                         })
-                
+                               
+                if self.recreate_mcp_per_message:
+                    await self.mcp.close()
+
+                print("DEBUG send tool respond to LLM with ", token_count([{"role": "system", "content": system_prompt}] + self.messages), "tokens.")
                 # Get final response after tool execution
                 final_response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[{"role": "system", "content": system_prompt}] + self.messages,
                     temperature=self.temperature,
-                    max_tokens=self.max_tokens
+                    #max_tokens=self.max_tokens
                 )
+                print("DEBUG send tool respons to LLM - DONE")
                 
                 final_content = final_response.choices[0].message.content or ""
                 self.messages.append({"role": "assistant", "content": final_content})
