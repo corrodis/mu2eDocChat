@@ -42,12 +42,12 @@ async function summarizeFile(docid, fileIndex) {
     }
 }
 
-async function summarizeSearchResult(docid, resultIndex, fileIndex, query) {
+async function summarizeSearchResult(docid, resultIndex, query) {
     const summaryElement = document.getElementById(`summary-content-${resultIndex}`);
     
     try {
         const requestData = {
-            fileIndex: fileIndex,
+            //fileIndex: fileIndex,
             instructions: `You are a helpful assistant that summarizes documents in roughly one sentence. Do not include any other text than the summary. Keep in mind, the user is looking for: ${query}`
         };
 

@@ -172,10 +172,20 @@ def get_document_summary(docid):
     """Get summary of document by ID"""
     try:
         data = request.get_json()
-        index = data.get('fileIndex', 0)
+        index = data.get('fileIndex', -1)
         instructions = data.get('instructions', 'You are a helpful assistant that summarizes documents in one paragraph. Do not include any other text than the summary.')
         doc = load2(docid, nodb=True) #collection=)
-        content = doc['files'][index]['text']
+        if index == -1:
+            content_parts = []
+            for index_, file in enumerate(doc['files']):
+                if len(doc['files']) > 1:
+                    filename = file.get('filename', f'file_{index}')
+                    content_parts.append(f"filename: {filename}:")
+                text = file.get('text', '')
+                content_parts.append(text)
+            content = '\n\n=======================\n'.join(content_parts)
+        else:
+            content = doc['files'][index]['text']
         client = getOpenAIClient()
         response = client.chat.completions.create(
             model=os.getenv('MU2E_WEB_SUMMARY_MODEL', os.getenv('MU2E_CHAT_MODEL','argo:gpt-4o')),
@@ -248,7 +258,7 @@ Return ONLY the JSON object with "filters", "dateAfter", "dateBefore" fields (nu
                 {"role": "system", "content": "You are a search filter extraction assistant. Extract only clear, unambiguous filters from queries."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=100,
+            max_tokens=200,
             temperature=0.1
         )
         
@@ -379,8 +389,8 @@ def handle_start_chat(data):
             }
             #print(user_context)
         
-        # Create new chat instance
-        chat = Chat(user_context=user_context, model=model)
+        # Create new chat instance with MCP recreation option for web interface
+        chat = Chat(user_context=user_context, model=model, recreate_mcp_per_message=True)
         active_chats[session_id] = chat
         
         emit('chat_started', {

@@ -38,7 +38,7 @@
                 <label for="collection" style="font-weight: 600; color: #495057; min-width: 80px;">Collection:</label>
                 <select id="collection" style="padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px;">
                     {% for collection in collection_names %}
-                    <option value="{{ collection }}"{% if collection == 'default' %} selected{% endif %}>{{ collection.title() }}</option>
+                    <option value="{{ collection }}"{% if collection == 'argo' %} selected{% endif %}>{{ collection.title() }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -287,13 +287,9 @@ function renderResults(data, htmlPrefix = '') {
                             <strong>Abstract:</strong> ${escapeHtml(data.metadata[idx].abstract)}
                         </div>
                     ` : ''}
-                    ${hasLongContent ? `
                         <div id="summary-content-${idx}">
                             <strong>AI Summary:</strong> <span class="summary-loading" style="color: #666; font-style: italic;">Generating summary...</span>
                         </div>
-                    ` : `
-                        ${!data.metadata[idx].abstract ? escapeHtml(data.documents[idx] || 'No content available').substring(0, 300) : ''}${(!data.metadata[idx].abstract && (data.documents[idx] || '').length > 300) ? '...' : ''}
-                    `}
                 </div>
                 
                 <div class="actions">
@@ -310,13 +306,12 @@ function renderResults(data, htmlPrefix = '') {
 
     // Then start async summarization for items with long content
     for (let idx = 0; idx < data.ids.length; idx++) {
-        const hasLongContent = (data.documents[idx] && data.documents[idx].length > 100) || 
-                              (data.metadata[idx].abstract && data.metadata[idx].abstract.length > 100);
+        //const hasLongContent = (data.documents[idx] && data.documents[idx].length > 100) || 
+        //                      (data.metadata[idx].abstract && data.metadata[idx].abstract.length > 100);
         
-        if (hasLongContent && data.metadata[idx].doc_id) {
-            // Find the file index for this content - you might need to adjust this logic
-            // based on how your data is structured
-            summarizeSearchResult(data.metadata[idx].doc_id, idx, 0, window.currentQuery || ''); // assuming file index 0 for search results
+        //if (hasLongContent && data.metadata[idx].doc_id) {
+	if (data.metadata[idx].doc_id) {
+            summarizeSearchResult(data.metadata[idx].doc_id, idx, window.currentQuery || ''); // assuming file index 0 for search results
         }
     }
 }
@@ -597,7 +592,7 @@ function renderResultsOnly(data) {
                               (data.metadata[idx].abstract && data.metadata[idx].abstract.length > 100);
         
         if (hasLongContent && data.metadata[idx].doc_id) {
-            summarizeSearchResult(data.metadata[idx].doc_id, idx, 0, window.currentQuery || '');
+            summarizeSearchResult(data.metadata[idx].doc_id, idx, window.currentQuery || '');
         }
     }
 }
