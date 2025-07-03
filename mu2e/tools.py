@@ -467,6 +467,28 @@ def start_background_generate(interval_minutes=5, days=1, collection=None, from_
     thread.start()
     print(f"Started background generate (every {interval_minutes} minutes)")
 
+def token_count(text_or_messages):
+    encoding = tiktoken.get_encoding("cl100k_base")
+
+    if isinstance(text_or_messages, str):
+        return len(encoding.encode(text_or_messages))
+    elif isinstance(text_or_messages, list):
+        messages_str = json.dumps(text_or_messages)
+        return len(encoding.encode(messages_str))
+    # more accurate, if ever needed again
+    #elif isinstance(text_or_messages, list):
+    #    total_tokens = 0
+    #    for message in text_or_messages:
+    #        content = message.get("content", "")
+    #        if content:
+    #            if isinstance(content, str):
+    #                total_tokens += len(encoding.encode(content))
+    #            else:
+    #                print("DEBUG! got a ", type(content))
+    #    return total_tokens
+    else:
+        None
+
 def get_last_generate_info(collection_name='default'):
     """Get last generate timestamp info"""
     try:
@@ -482,9 +504,11 @@ def getOpenAIClient(base_url=None, api_key=None):
     load_dotenv()
     base_url = base_url or os.getenv('MU2E_CHAT_BASE_URL', 'http://localhost:55019/v1')
     api_key = api_key or os.getenv('MU2E_CHAT_API_KEY', 'whatever+random')
-        
+    
     return OpenAI(
         base_url=base_url,
-        api_key=api_key
+        api_key=api_key,
+        max_retries=5,
+        timeout=30.0
     )
 
