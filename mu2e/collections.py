@@ -30,6 +30,9 @@ def get_collection(collection_name=None, user=None, model=None, url=None):
     """Get a ChromaDB collection by name or type"""
     client = _get_client()
     
+    if collection_name is None: # load from settings
+        collection_name = name=os.getenv('MU2E_CHROMA_DEFAULT_COLLECTION') or "mu2e_default" 
+
     if collection_name in ['argo']:
         # Return Argo collection with custom embedding function
         model_ = model or "v3small"
@@ -52,9 +55,11 @@ def get_collection(collection_name=None, user=None, model=None, url=None):
             )
         c.max_input = 512
         return c
+    if collection_name in ['default']:
+        client.get_or_create_collection(name="mu2e_default")
     else:
         # Return default collection
-        return client.get_or_create_collection(name=os.getenv('MU2E_CHROMA_DEFAULT_COLLECTION') or "mu2e_default")
+        return get_collection(collection_name=None, user=user, model=model, url=url)
 
 class ArgoEmbeddingFunction(EmbeddingFunction):
     def __init__(self, user: str, model: str = "v3small", url=None):
