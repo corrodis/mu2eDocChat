@@ -211,7 +211,7 @@ def get_available_models():
                 'is_default': model.id == default_model
             }
             for model in models.data
-            if model.id not in seen and not seen.add(model.id)
+            if model.internal_name not in seen and not seen.add(model.internal_name)
         ]
 
         # Sort models, put default first
