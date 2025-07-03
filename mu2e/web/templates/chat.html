@@ -235,6 +235,27 @@
         background-color: #f8f9fa;
         font-weight: bold;
     }
+    
+    /* Status message styling */
+    .message.system.status-tool_start {
+        border-left: 4px solid #3498db;
+        background: #e3f2fd;
+    }
+    
+    .message.system.status-tool_result {
+        border-left: 4px solid #27ae60;
+        background: #e8f5e8;
+    }
+    
+    .message.system.status-agent_start {
+        border-left: 4px solid #3498db;
+        background: #e3f2fd;
+    }
+    
+    .message.system.status-agent_complete {
+        border-left: 4px solid #27ae60;
+        background: #e8f5e8;
+    }
 </style>
 {% endblock %}
 
@@ -381,8 +402,8 @@ function initializeSocket() {
         setWaitingState(false);
     });
     
-    socket.on('tool_usage', function(data) {
-        addMessage('system', `Using tool: ${data.tool_name} with arguments: ${JSON.stringify(data.arguments)}`);
+    socket.on('status_update', function(data) {
+        addStatusMessage(data.message, data.metadata);
     });
     
     socket.on('chat_ended', function(data) {
@@ -513,6 +534,48 @@ function addMessage(role, content) {
     }
     
     messagesContainer.appendChild(messageDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function addStatusMessage(message, metadata) {
+    const messagesContainer = document.getElementById('chatMessages');
+    const statusType = metadata.type || 'unknown';
+    
+    // Look for existing status message to append to
+    const existingMessages = messagesContainer.querySelectorAll('.message.system[class*="status-"]');
+    let lastStatusMessage = null;
+    
+    if (existingMessages.length > 0) {
+        lastStatusMessage = existingMessages[existingMessages.length - 1];
+    }
+    
+    // If we have a tool_result or agent status and there's an existing status message, append to it
+    if (lastStatusMessage && (statusType === 'tool_result' || statusType === 'agent_complete')) {
+        // Add a line break and append the new message
+        const lineBreak = document.createElement('br');
+        const newLine = document.createTextNode(message);
+        
+        lastStatusMessage.appendChild(lineBreak);
+        lastStatusMessage.appendChild(newLine);
+        
+        // Update the class to include the new status type
+        lastStatusMessage.className += ` status-${statusType}`;
+        
+        // Add fade-out effect for completed status messages after a delay
+        if (statusType === 'agent_complete' || statusType === 'tool_result') {
+            setTimeout(() => {
+                lastStatusMessage.style.opacity = '0.6';
+                lastStatusMessage.style.fontSize = '0.85em';
+            }, 3000);
+        }
+    } else {
+        // Create new message for tool_start, agent_start, or if no existing message
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message system status-${statusType}`;
+        messageDiv.textContent = message;
+        messagesContainer.appendChild(messageDiv);
+    }
+    
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 

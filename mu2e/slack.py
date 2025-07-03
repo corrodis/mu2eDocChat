@@ -233,29 +233,37 @@ class slack:
         except SlackApiError as e:
             print(f"Error fetching messages: {e}")
 
-    async def _tool_use_notification(self, tool_name: str, arguments: dict, channel: str, thread_ts: str):
-        """Send a notification about tool usage"""
+    async def _status_notification(self, message: str, metadata: dict, channel: str, thread_ts: str):
+        """Send a status notification"""
         if not self.show_tool_notifications:
             return
             
-        tool_descriptions = {
-            "search": "🔍 Searching for documents using semantic similarity",
-            "fulltext_search": "📄 Searching document text for specific keywords", 
-            "get": "📖 Retrieving specific document",
-            "list": "📋 Listing recent documents",
-            "docdb_search": "🗃️ Searching DocDB metadata"
-        }
+        status_type = metadata.get("type", "unknown")
         
-        description = tool_descriptions.get(tool_name, f"🔧 Using tool: {tool_name}")
+        # Add appropriate emoji based on status type
+        if status_type == "tool_start":
+            emoji = "🔍"
+        elif status_type == "tool_result":
+            emoji = "📊"
+        elif status_type == "agent_start":
+            emoji = "🤖"
+        elif status_type == "agent_complete":
+            emoji = "✅"
+        else:
+            emoji = "ℹ️"
         
-        # Add search query info if available
-        if "query" in arguments:
-            query = arguments["query"]
-            if len(query) > 50:
-                query = query[:47] + "..."
-            description += f" for '{query}'"
-        elif "docid" in arguments:
-            description += f" (ID: {arguments['docid']})"
+        description = f"{emoji} {message}"
+        
+        # Add additional context if available
+        if status_type == "tool_start" and "arguments" in metadata:
+            arguments = metadata["arguments"]
+            if "query" in arguments:
+                query = arguments["query"]
+                if len(query) > 50:
+                    query = query[:47] + "..."
+                description += f" for '{query}'"
+            elif "docid" in arguments:
+                description += f" (ID: {arguments['docid']})"
         
         # Send notification in thread
         thread_ts_for_notification = thread_ts if not self._is_direct_message(channel) else None
@@ -300,11 +308,11 @@ class slack:
                 
                 chat_instance = self.processor(user_context=user_context)
                 
-                # Set up tool use callback for this chat instance
-                async def tool_callback(tool_name, arguments):
-                    await self._tool_use_notification(tool_name, arguments, channel, ts)
+                # Set up status callback for this chat instance
+                async def status_callback(message, metadata):
+                    await self._status_notification(message, metadata, channel, ts)
                 
-                chat_instance.set_tool_use_callback(tool_callback)
+                chat_instance.set_status_callback(status_callback)
                 self.threads[ts]["chat"] = chat_instance
             
             user = message["user"]

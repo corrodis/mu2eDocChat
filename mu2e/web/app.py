@@ -419,15 +419,15 @@ def handle_send_message(data):
         
         chat = active_chats[session_id]
         
-        # Set up tool usage callback to emit real-time tool usage events
-        async def tool_usage_callback(tool_name, arguments):
-            emit('tool_usage', {
-                'tool_name': tool_name,
-                'arguments': arguments,
+        # Set up status callback to emit real-time status updates
+        async def status_callback(message, metadata):
+            emit('status_update', {
+                'message': message,
+                'metadata': metadata,
                 'session_id': session_id
             })
         
-        chat.set_tool_use_callback(tool_usage_callback)
+        chat.set_status_callback(status_callback)
         
         # Run the async chat method in a new event loop
         loop = asyncio.new_event_loop()

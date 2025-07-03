@@ -165,13 +165,13 @@ Always cite documents with their IDs and links using this format:
             #        pass
             await self.createMcp()
 
-    def set_tool_use_callback(self, callback):
-        """Set a callback function to be called when tools are used.
+    def set_status_callback(self, callback):
+        """Set a callback function to communicate status updates to the user.
         
         Args:
-            callback: Async function that takes (tool_name, arguments) as parameters
+            callback: Async function that takes (message, metadata) as parameters
         """
-        self._tool_use_callback = callback
+        self._status_callback = callback
 
 
     def _build_system_prompt(self, additional_context=None) -> str:
@@ -369,8 +369,12 @@ Always cite documents with their IDs and links using this format:
                     print(f"USING TOOL: {tool_name} with {arguments}")
                     
                     # Notify about tool usage if callback is provided
-                    if hasattr(self, '_tool_use_callback') and self._tool_use_callback:
-                        await self._tool_use_callback(tool_name, arguments)
+                    if hasattr(self, '_status_callback') and self._status_callback:
+                        await self._status_callback(f"using '{tool_name}' with '{arguments}'", {
+                            "type": "tool_start",
+                            "tool_name": tool_name,
+                            "arguments": arguments
+                        })
                     
                     try:
                         tool_result = await self.mcp.call_tool(tool_name, arguments)
@@ -378,12 +382,21 @@ Always cite documents with their IDs and links using this format:
                     except Exception as e:
                         content = f"Tool error: {str(e)}"
                     
-                    print(f"TOOL USE DONE: {token_count(content)} tokens: {content[:50]}")
+                    token_count_ = token_count(content)
+                    print(f"TOOL USE DONE: {token_count_} tokens: {content[:50]}")
+                    
+                    # Notify about tool results
+                    if hasattr(self, '_status_callback') and self._status_callback:
+                        await self._status_callback(f"Found {token_count_} tokens ({len(content)} chars)  of content", {
+                            "type": "tool_result",
+                            "tool_name": tool_name,
+                            "tokens": token_count_
+                        })
                     
                     # Apply summarization if agent is enabled and it's a search tool with sufficient content
                     if (self.use_summarization_agent and 
                         any(search_tool in tool_name for search_tool in ["search", "fulltext_search", "docdb_search"]) and
-                        token_count(content) >= 500):
+                        token_count_ >= 500):
                         
                         # Build conversation context from natural conversation messages only
                         conversation_messages = []
@@ -402,16 +415,27 @@ Always cite documents with their IDs and links using this format:
                         conversation_context = " | ".join(conversation_messages)
                         print("DEBUG conversation_context:", conversation_context)
                         
-                        # Notify about agent usage using the same callback as tools
-                        if hasattr(self, '_tool_use_callback') and self._tool_use_callback:
-                            await self._tool_use_callback("DocumentSummarizerAgent", {
+                        # Notify about agent usage
+                        if hasattr(self, '_status_callback') and self._status_callback:
+                            await self._status_callback("Running agents to summariz results...", {
+                                "type": "agent_start",
+                                "agent": "DocumentSummarizerAgent",
                                 "task": "summarize_search_results",
-                                "tool_name": tool_name,
-                                "original_tokens": token_count(content),
-                                "conversation_context": conversation_context
+                                "original_tokens": token_count_
                             })
                         
                         content = await summarize_search_results(content, conversation_context)
+                        
+                        # Notify about agent completion
+                        if hasattr(self, '_status_callback') and self._status_callback:
+                            new_token_count = token_count(content)
+                            await self._status_callback(f"Summarization complete: {token_count_} → {new_token_count} tokens", {
+                                "type": "agent_complete",
+                                "agent": "DocumentSummarizerAgent",
+                                "original_tokens": token_count_,
+                                "new_tokens": new_token_count,
+                                "tokens_saved": token_count_ - new_token_count
+                            })
                     # if anthropic
                     if any(model_name in self.model for model_name in ["claude", "sonnet", "opus"]):
                         self.messages.append({
