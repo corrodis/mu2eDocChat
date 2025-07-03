@@ -21,6 +21,7 @@ import subprocess
 from dotenv import load_dotenv
 from .utils import get_log_dir
 from .tools import getOpenAIClient, token_count
+from .agent_tasks import summarize_search_results
 
 # Load environment variables
 load_dotenv()
@@ -100,8 +101,8 @@ class Chat:
         mcp_timeout_seconds: int = 10,
         api_key: str = None,
         user_context: dict = None,
-        recreate_mcp_per_message: bool = False
-        reduce_tokens: bool = False
+        recreate_mcp_per_message: bool = False,
+        use_summarization_agent: bool = True
     ):
         # Load from environment with defaults (chat-specific variables)
         load_dotenv()
@@ -116,7 +117,7 @@ class Chat:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.recreate_mcp_per_message = recreate_mcp_per_message
-        self.reduce_tokens = reduce_tokens
+        self.use_summarization_agent = use_summarization_agent
 
         # Conversation history
         self.messages: List[Dict[str, Any]] = []
@@ -171,6 +172,7 @@ Always cite documents with their IDs and links using this format:
             callback: Async function that takes (tool_name, arguments) as parameters
         """
         self._tool_use_callback = callback
+
 
     def _build_system_prompt(self, additional_context=None) -> str:
         """Build system prompt with current date/time and user context."""
@@ -376,7 +378,40 @@ Always cite documents with their IDs and links using this format:
                     except Exception as e:
                         content = f"Tool error: {str(e)}"
                     
-                    print(f"TOOL USE DONE: {token_count(content)} toekns: {content[:50]}")    
+                    print(f"TOOL USE DONE: {token_count(content)} tokens: {content[:50]}")
+                    
+                    # Apply summarization if agent is enabled and it's a search tool with sufficient content
+                    if (self.use_summarization_agent and 
+                        any(search_tool in tool_name for search_tool in ["search", "fulltext_search", "docdb_search"]) and
+                        token_count(content) >= 500):
+                        
+                        # Build conversation context from natural conversation messages only
+                        conversation_messages = []
+                        for msg in self.messages:
+                            # Include user messages with string content (no tool results)
+                            if (msg["role"] == "user" and 
+                                isinstance(msg["content"], str) and 
+                                "type" not in msg):
+                                conversation_messages.append(f"User: {msg['content']}")
+                            # Include assistant messages with string content
+                            elif (msg["role"] == "assistant" and 
+                                  isinstance(msg["content"], str) and 
+                                  "tool_calls" not in msg):
+                                conversation_messages.append(f"Assistant: {msg['content']}")
+                        
+                        conversation_context = " | ".join(conversation_messages)
+                        print("DEBUG conversation_context:", conversation_context)
+                        
+                        # Notify about agent usage using the same callback as tools
+                        if hasattr(self, '_tool_use_callback') and self._tool_use_callback:
+                            await self._tool_use_callback("DocumentSummarizerAgent", {
+                                "task": "summarize_search_results",
+                                "tool_name": tool_name,
+                                "original_tokens": token_count(content),
+                                "conversation_context": conversation_context
+                            })
+                        
+                        content = await summarize_search_results(content, conversation_context)
                     # if anthropic
                     if any(model_name in self.model for model_name in ["claude", "sonnet", "opus"]):
                         self.messages.append({

@@ -30,7 +30,7 @@ async def handle_search_tool(arguments: dict, collection) -> list[types.TextCont
             f"title='{metadata.get('title', 'N/A')}' "
             f"date='{metadata.get('created', 'N/A')}' "
             f"link='{metadata.get('link', 'N/A')}'>\n"
-            f"<chunk>{doc_text}</chunk>\n"
+            f"{doc_text}\n"
             f"</document>\n"
         )
     
