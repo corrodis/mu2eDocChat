@@ -57,7 +57,7 @@ async def summarize_search_results(content: str, conversation_context: str) -> s
     for i, (attributes, doc_content) in enumerate(documents):
         if token_count(doc_content) >= 200:  # Only summarize substantial content
             # Create a separate agent with short timeout for each task
-            agent = DocumentSummarizerAgent(timeout=10.0, model="argo:gpt-4o")#"argo:claude-3.5-sonnet-v2")
+            agent = DocumentSummarizerAgent(timeout=10.0, model="argo:gpt-4-turbo")#"argo:claude-3.5-sonnet-v2")
             summarization_tasks.append(agent.summarize_document(doc_content, context_for_summary))
             doc_indices_to_summarize.append(i)
     

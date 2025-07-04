@@ -141,18 +141,27 @@ class Chat:
         
         # Base system prompt (will be enhanced with context)
         self.base_system_prompt =\
-        """You are a helpful AI assistant for the Mu2e experiment with access to document search tools.
+        """You are a helpful AI assistant for the Mu2e experiment with access to multiple document search tools.
 
-Use these tools proactively to find information that will help answer user questions. Ground your answers in information from the tools and be concise.
+AVAILABLE TOOLS:
+- docdb_search: Semantic search for concepts, topics, and meaning-based queries
+- docdb_fulltext: Keyword/exact text search for specific terms or phrases  
+- docdb_list: Browse recent documents (use include_documents=false for fast title-only browsing, or include_documents=true for full content)
+- docdb_get: Retrieve complete document content by ID when full context is needed for detailed analysis
 
-Use actual tool responses provided in the conversation. Make additional tool calls only through the proper API when needed for supplementary information.
+SEARCH STRATEGY:
+Use these tools proactively and strategically. For comprehensive answers, perform multi-step research by chaining multiple searches. Start with semantic search (docdb_search) for topic-based queries, use fulltext search (docdb_fulltext) for specific terms. Only use docdb_list when explicitly asked about recent document activity (e.g., "what documents were added in the last X days") - use include_documents=false for faster response when browsing titles and abstracts. Use docdb_get when you need complete document context for detailed analysis or when search results only provide partial information.
 
-Ask the user for clarification when needed.
+RESPONSE GUIDELINES:
+- Ground all answers in actual tool responses from the conversation
+- Be concise but thorough - large documents may be auto-summarized while preserving key details
+- Make additional tool calls when needed for supplementary information
+- Ask for clarification when questions are ambiguous
+- Provide specific information rather than generic responses
+- If documents contain conflicting information, note differences and cite both sources
+- If you make an error or the user corrects you, carefully review available information before responding
 
-Provide specific information rather than generic responses. If documents contain conflicting information, note the differences and cite both sources.
-
-If you make an error or the user corrects you, carefully review the available information before responding.
-
+CITATIONS:
 Always cite documents with their IDs and links using this format: 
 [mu2e-docdb-12345](https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid=12345)"""
 
@@ -176,8 +185,8 @@ Always cite documents with their IDs and links using this format:
 
     async def _call_openai_with_retry(self, **kwargs):
         """Call OpenAI API with retry logic for 500/503 errors."""
-        max_retries = 2
-        base_delay = 10
+        max_retries = 1
+        base_delay = 60
         
         # Calculate token count for the request
         messages = kwargs.get('messages', [])
@@ -239,6 +248,18 @@ Always cite documents with their IDs and links using this format:
         prompt += "\n\n Context: " + json.dumps(context, indent=2)
                 
         return prompt
+    
+    async def _update_context_callback(self):
+        """Send context update callback if available."""
+        if hasattr(self, '_status_callback') and self._status_callback:
+            context_tokens = token_count([{"role": "system", "content": self._build_system_prompt()}] + self.messages)
+            try:
+                await self._status_callback("", {
+                    "type": "context_update",
+                    "tokens": context_tokens
+                })
+            except Exception as e:
+                print(f"Error sending context update: {e}")
 
     def _save_conversation_log(self):
         """Save conversation to JSON file"""
@@ -352,6 +373,7 @@ Always cite documents with their IDs and links using this format:
         # Add user message to conversation if provided
         if user_message is not None:
             self.messages.append({"role": "user", "content": user_message})
+            await self._update_context_callback()
 
         await self._checkMCP()
         
@@ -369,7 +391,8 @@ Always cite documents with their IDs and links using this format:
                 temperature=self.temperature,
                 #max_tokens=self.max_tokens,
                 tools=self.tools if self.tools else None,
-                tool_choice="auto" if self.tools else None
+                tool_choice="auto" if self.tools else None,
+                parallel_tool_calls=True
             )
             message = response.choices[0].message
             
@@ -393,6 +416,7 @@ Always cite documents with their IDs and links using this format:
                         "role": "assistant",
                         "content": content
                     })
+                    await self._update_context_callback()
                 else: # openAI
                     self.messages.append({
                         "role": "assistant",
@@ -409,6 +433,7 @@ Always cite documents with their IDs and links using this format:
                             for tc in message.tool_calls
                         ]
                     })
+                    await self._update_context_callback()
                 
                 # Execute each tool call
                 for tool_call in message.tool_calls:
@@ -500,6 +525,7 @@ Always cite documents with their IDs and links using this format:
                                 "content": content
                             }]
                         })
+                        await self._update_context_callback()
                     else:
                         # Add openAI tool result to conversation
                         self.messages.append({
@@ -507,6 +533,7 @@ Always cite documents with their IDs and links using this format:
                             "tool_call_id": tool_call.id,
                             "content": content
                         })
+                        await self._update_context_callback()
                                
                 if self.recreate_mcp_per_message:
                     await self.mcp.close()
@@ -529,6 +556,7 @@ Always cite documents with their IDs and links using this format:
                 
                 final_content = final_response.choices[0].message.content or ""
                 self.messages.append({"role": "assistant", "content": final_content})
+                await self._update_context_callback()
                 
                 if self.logging_level >= 3:
                     self._save_conversation_log()
@@ -538,6 +566,7 @@ Always cite documents with their IDs and links using this format:
                 # No tool calls, regular response
                 content = message.content or ""
                 self.messages.append({"role": "assistant", "content": content})
+                await self._update_context_callback()
                 
                 if self.logging_level >= 2:
                     self._save_conversation_log()

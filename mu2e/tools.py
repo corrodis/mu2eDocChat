@@ -508,7 +508,7 @@ def getOpenAIClient(base_url=None, api_key=None):
     return OpenAI(
         base_url=base_url,
         api_key=api_key,
-        max_retries=5,
-        timeout=30.0
+        #max_retries=5,
+        #timeout=30.0
     )
 
