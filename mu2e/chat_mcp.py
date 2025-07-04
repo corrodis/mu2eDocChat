@@ -13,13 +13,14 @@ import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
+from openai import InternalServerError, APIError
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from contextlib import AsyncExitStack
 import aiohttp
 import subprocess
 from dotenv import load_dotenv
-from .utils import get_log_dir
+from .utils import get_log_dir, get_max_context
 from .tools import getOpenAIClient, token_count
 from .agent_tasks import summarize_search_results
 
@@ -173,6 +174,53 @@ Always cite documents with their IDs and links using this format:
         """
         self._status_callback = callback
 
+    async def _call_openai_with_retry(self, **kwargs):
+        """Call OpenAI API with retry logic for 500/503 errors."""
+        max_retries = 2
+        base_delay = 10
+        
+        # Calculate token count for the request
+        messages = kwargs.get('messages', [])
+        request_tokens = token_count(messages) if messages else 0
+        
+        # Check if context exceeds maximum limit
+        max_context = get_max_context()
+        if request_tokens > max_context:
+            raise ValueError(f"Context too large: {request_tokens} tokens exceeds maximum of {max_context} tokens. Please start a new chat.")
+        
+        for attempt in range(max_retries + 1):
+            try:
+                return self.client.chat.completions.create(**kwargs)
+                
+            except (InternalServerError, APIError) as e:
+                error_code = getattr(e, 'status_code', None)
+                
+                if error_code in [500, 503] and attempt < max_retries:
+                    delay = base_delay * (2 ** attempt)  # Exponential backoff
+                    
+                    # Notify user about the retry with token count
+                    if hasattr(self, '_status_callback') and self._status_callback:
+                        await self._status_callback(f"Server error ({request_tokens} tokens, attempt {attempt + 1}/{max_retries + 1}). Retrying in {delay}s...", {
+                            "type": "system_warning",
+                            "attempt": attempt + 1,
+                            "max_attempts": max_retries + 1,
+                            "delay": delay,
+                            "request_tokens": request_tokens
+                        })
+                    
+                    print(f"OpenAI API error (attempt {attempt + 1}, {request_tokens} tokens): {e}. Retrying in {delay}s...")
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    # Max retries reached or non-retryable error
+                    print(f"OpenAI API error (final failure, {request_tokens} tokens): {e}")
+                    raise e
+            
+            except Exception as e:
+                # Non-retryable error
+                print(f"OpenAI API non-retryable error ({request_tokens} tokens): {e}")
+                raise e
+
 
     def _build_system_prompt(self, additional_context=None) -> str:
         """Build system prompt with current date/time and user context."""
@@ -286,18 +334,24 @@ Always cite documents with their IDs and links using this format:
         
         return status
         
-    async def chat(self, user_message: str, user_context=None) -> str:
+    async def chat(self, user_message: str = None, user_context=None, _recursion_depth=0) -> str:
         """
         Send a message and get a response with automatic tool handling.
         
         Args:
-            user_message: User's message            
+            user_message: User's message (None if no new user message should be added)
+            user_context: Additional context for this message
+            _recursion_depth: Internal recursion tracking
         Returns:
             Assistant's response
         """
         
-        # Add user message to conversation
-        self.messages.append({"role": "user", "content": user_message})
+        # Maximum recursion depth to prevent infinite loops
+        MAX_RECURSION_DEPTH =10 
+        
+        # Add user message to conversation if provided
+        if user_message is not None:
+            self.messages.append({"role": "user", "content": user_message})
 
         await self._checkMCP()
         
@@ -308,8 +362,8 @@ Always cite documents with their IDs and links using this format:
         ] + self.messages
         
         try:
-            # Call OpenAI API
-            response = self.client.chat.completions.create(
+            # Call OpenAI API with retry logic
+            response = await self._call_openai_with_retry(
                 model=self.model,
                 messages=full_messages,
                 temperature=self.temperature,
@@ -393,9 +447,9 @@ Always cite documents with their IDs and links using this format:
                             "tokens": token_count_
                         })
                     
-                    # Apply summarization if agent is enabled and it's a search tool with sufficient content
+                    # Apply summarization if agent is enabled and it's a search/list tool with sufficient content
                     if (self.use_summarization_agent and 
-                        any(search_tool in tool_name for search_tool in ["search", "fulltext_search", "docdb_search"]) and
+                        any(search_tool in tool_name for search_tool in ["search", "fulltext_search", "docdb_search", "list", "docdb_list"]) and
                         token_count_ >= 500):
                         
                         # Build conversation context from natural conversation messages only
@@ -457,14 +511,20 @@ Always cite documents with their IDs and links using this format:
                 if self.recreate_mcp_per_message:
                     await self.mcp.close()
 
+                # Check if we should recurse to allow more tool calls
+                if _recursion_depth < MAX_RECURSION_DEPTH:
+                    # Recursively call chat to see if LLM wants more tool calls
+                    return await self.chat(user_message=None, user_context=user_context, _recursion_depth=_recursion_depth + 1)
+
                 print("DEBUG send tool respond to LLM with ", token_count([{"role": "system", "content": system_prompt}] + self.messages), "tokens.")
-                # Get final response after tool execution
-                final_response = self.client.chat.completions.create(
+                # Get final response after tool execution (or if max recursion depth reached)
+                final_response = await self._call_openai_with_retry(
                     model=self.model,
                     messages=[{"role": "system", "content": system_prompt}] + self.messages,
                     temperature=self.temperature,
                     #max_tokens=self.max_tokens
                 )
+
                 print("DEBUG send tool respons to LLM - DONE")
                 
                 final_content = final_response.choices[0].message.content or ""

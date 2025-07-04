@@ -22,9 +22,11 @@ async def handle_fulltext_search_tool(arguments: dict, collection) -> list[types
             f"<document rank='{i+1}' "
             f"docid='{metadata.get('docid', 'N/A')}' "
             f"title='{metadata.get('title', 'N/A')}' "
-            f"date='{metadata.get('created', 'N/A')}' "
+            f"created='{metadata.get('created', 'N/A')}' "
+            f"revised='{metadata.get('revised_content', 'N/A')}' "
+            f"abstract='{metadata.get('abstract', 'N/A')}' "
             f"link='{metadata.get('link', 'N/A')}'>\n"
-            f"<chunk>{doc_text}</chunk>\n"
+            f"{doc_text}\n"
             f"</document>\n"
         )
     

@@ -2,9 +2,11 @@
 AI agents for sub-tasks
 """
 
-from typing import Optional
+import json
+import asyncio
+from typing import Optional, Dict, Any, List
 from .tools import getOpenAIClient, token_count
-from .utils import get_model
+from .utils import get_model, get_max_context
 
 
 class DocumentSummarizerAgent:
@@ -72,6 +74,17 @@ Summary:"""
         #print("DEBUG START summarize_document tokens: ", original_tokens)
         if original_tokens < 500:  # Don't summarize short content
             return document_content
+        
+        # Truncate if content exceeds 80% of max context limit
+        max_context = get_max_context()
+        max_input_tokens = int(max_context * 0.8)
+        if original_tokens > max_input_tokens:
+            # Rough character-to-token ratio (approximately 4 chars per token)
+            max_chars = max_input_tokens * 4
+            document_content = document_content[:max_chars]
+            truncated_tokens = token_count(document_content)
+            print(f"Truncated document: {original_tokens} -> {truncated_tokens} tokens (max: {max_input_tokens})")
+            original_tokens = truncated_tokens
         
         try:
             # Build summarization prompt

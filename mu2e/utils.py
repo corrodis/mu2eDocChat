@@ -141,16 +141,16 @@ def list_to_search_result(docs, enhence=0):
                 'revised_timestamp': timestamp,
                 'revised_meta': last_updated.strftime('%d %b %Y, %H:%M') if last_updated else '',
                 'version': 1,
-                'title': doc.get('tite', doc.get('title', '')),
+                'title': doc.get('title', ''),
                 'created': last_updated.strftime('%d %b %Y, %H:%M') if last_updated else '',
                 'docid_str': f"Mu2e-doc-{doc.get('id', '')}-v1",
                 'doc_id': doc.get('doc_id', ''),
                 'abstract': '',  # Not available in source format
                 'topics': ', '.join(doc.get('topics', [])),
                 'revised_content': last_updated.strftime('%d %b %Y, %H:%M') if last_updated else '',
-                'link': doc.get('link:', ''),
+                'link': doc.get('link', ''),
                 'doc_type': 'mu2e-docdb',
-                'filename': doc.get('filename:', ''),
+                'filename': doc.get('filename', ''),
             }
             documents.append('')
             
@@ -226,3 +226,8 @@ def get_available_models():
             {'id': default_model, 'name': default_model, 'is_default': True}
         ]
         return fallback_models
+
+def get_max_context():
+    """Get the maximum context length from environment"""
+    load_dotenv()
+    return int(os.getenv('MU2E_MAX_CONTEXT', '200000'))

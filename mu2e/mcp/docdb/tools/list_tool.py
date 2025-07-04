@@ -15,14 +15,25 @@ async def handle_list_tool(arguments: dict, db) -> list[types.TextContent]:
     
     enhance = 2 if include_documents else 1
 
-    document = search_list(days, enhence=enhance, db=db)
-    #document = db.list_latest(days)
+    results = search_list(days, enhence=enhance, db=db)
     
-    class DateTimeEncoder(json.JSONEncoder):
-        def default(self, obj):
-            if isinstance(obj, datetime):
-                return obj.isoformat()
-            return super().default(obj)
+    # Format results for LLM consumption (same as search tools)
+    response_text = f"<search_results query='list' type='list' count='{results['n_results']}'>\n"
     
-    formatted_text = json.dumps(document, indent=4, cls=DateTimeEncoder)
-    return [types.TextContent(type="text", text=formatted_text)]
+    for i, (doc_text, distance, doc_id, metadata) in enumerate(zip(
+        results['documents'], results['distances'], results['ids'], results['metadata']
+    )):
+        response_text += (
+            f"<document rank='{i+1}' "
+            f"docid='{metadata.get('docid', 'N/A')}' "
+            f"title='{metadata.get('title', 'N/A')}' "
+            f"created='{metadata.get('created', 'N/A')}' "
+            f"revised='{metadata.get('revised_content', 'N/A')}' "
+            f"abstract='{metadata.get('abstract', 'N/A')}' "
+            f"link='{metadata.get('link', 'N/A')}'>\n"
+            f"{doc_text}\n"
+            f"</document>\n"
+        )
+    
+    response_text += "</search_results>"
+    return [types.TextContent(type="text", text=response_text)]

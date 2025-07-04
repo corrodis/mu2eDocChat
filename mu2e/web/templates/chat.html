@@ -99,6 +99,15 @@
         max-width: 100%;
     }
     
+    /* Status messages align left like assistant messages */
+    .message.system[class*="status-"] {
+        text-align: left;
+        margin-left: 0;
+        margin-right: auto;
+        max-width: 80%;
+        font-style: normal;
+    }
+    
     .chat-input-container {
         border-top: 1px solid #ddd;
         padding: 1rem;
@@ -256,6 +265,11 @@
         border-left: 4px solid #27ae60;
         background: #e8f5e8;
     }
+    
+    .message.system.status-system_warning {
+        border-left: 4px solid #f39c12;
+        background: #fef9e7;
+    }
 </style>
 {% endblock %}
 
@@ -285,7 +299,7 @@
         </div>
         
         <div class="typing-indicator-enhanced" id="typingIndicator">
-            Assistant is typing<span class="dots"><span></span><span></span><span></span></span>
+            Assistant is working<span class="dots"><span></span><span></span><span></span></span>
         </div>
         
         <div class="chat-input-container">
