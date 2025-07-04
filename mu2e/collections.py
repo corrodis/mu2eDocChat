@@ -56,7 +56,9 @@ def get_collection(collection_name=None, user=None, model=None, url=None):
         c.max_input = 512
         return c
     if collection_name in ['default']:
-        client.get_or_create_collection(name="mu2e_default")
+        c = client.get_or_create_collection(name="mu2e_default")
+        c.max_input = 256
+        return c
     else:
         # Return default collection
         return get_collection(collection_name=None, user=user, model=model, url=url)
