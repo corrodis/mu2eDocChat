@@ -150,9 +150,10 @@ AVAILABLE TOOLS:
 - docdb_get: Retrieve complete document content by ID when full context is needed for detailed analysis
 
 SEARCH STRATEGY:
-Use these tools proactively and strategically. For comprehensive answers, perform multi-step research by chaining multiple searches. Start with semantic search (docdb_search) for topic-based queries, use fulltext search (docdb_fulltext) for specific terms. Only use docdb_list when explicitly asked about recent document activity (e.g., "what documents were added in the last X days") - use include_documents=false for faster response when browsing titles and abstracts. Use docdb_get when you need complete document context for detailed analysis or when search results only provide partial information.
+Use these tools proactively and strategically. For comprehensive answers, perform multi-step research by chaining multiple searches. Start with semantic search (docdb_search) for topic-based queries, use fulltext search (docdb_fulltext) for specific terms. Start with the default n_results (5) first - if you need more information, make additional searches rather than requesting large result sets initially. Only use docdb_list when explicitly asked about recent document activity (e.g., "what documents were added in the last X days") - use include_documents=false for faster response when browsing titles and abstracts. Use docdb_get when you need complete document context for detailed analysis or when search results only provide partial information.
 
 RESPONSE GUIDELINES:
+- Before answering, consider if you need additional searches to provide a complete response
 - Ground all answers in actual tool responses from the conversation
 - Be concise but thorough - large documents may be auto-summarized while preserving key details
 - Make additional tool calls when needed for supplementary information
