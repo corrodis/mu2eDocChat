@@ -23,9 +23,13 @@ def main():
     
     # Generate from local
     local_parser = subparsers.add_parser('generate-local', help='Generate embeddings from locally stored documents')
-    
+    local_parser.add_argument('--days', type=int,
+                             help='Only process documents from the last N days')
+
     # Generate from local for all collections
     local_all_parser = subparsers.add_parser('generate-local-all', help='Generate embeddings for all non-default collections from locally stored documents')
+    local_all_parser.add_argument('--days', type=int,
+                                help='Only process documents from the last N days')
     
     # Vector Search
     search_parser = subparsers.add_parser('search', help='Vector search in documents')
@@ -53,7 +57,7 @@ def main():
     if args.command == 'generate':
         from mu2e.utils import should_add_image_descriptions
         
-        collection = get_collection(args.collection) if args.collection != 'default' else None
+        collection = get_collection(args.collection) if args.collection != 'default' else get_collection()
         
         # Determine if image descriptions should be used
         add_image_descriptions = should_add_image_descriptions() and not args.no_image_descriptions
@@ -63,26 +67,34 @@ def main():
         if args.docid:
             # Generate specific document by ID (always force reload)
             image_text = " (with image descriptions)" if add_image_descriptions else ""
-            print(f"Generating {args.collection} embeddings for document {args.docid} (force reload){image_text}...")
+            print(f"Generating {args.collection}::{collection.name} embeddings for document {args.docid} (force reload){image_text}...")
             db.get_parse_store(args.docid, save_raw=True, add_image_descriptions=add_image_descriptions)
         else:
             # Generate recent documents
             force_text = " (force reload)" if args.force_reload else ""
             image_text = " (with image descriptions)" if add_image_descriptions else ""
-            print(f"Generating {args.collection} embeddings for documents from the last {args.days} days{force_text}{image_text}...")
+            print(f"Generating {args.collection}::{collection.name} embeddings for documents from the last {args.days} days{force_text}{image_text}...")
             db.generate(days=args.days, force_reload=args.force_reload, add_image_descriptions=add_image_descriptions)
         
         print("Done!")
         
     elif args.command == 'generate-local':
-        collection = get_collection(args.collection) if args.collection != 'default' else None
-        print(f"Generating {args.collection} embeddings from locally stored documents...")
-        processed = tools.generate_from_local(collection=collection)
+        collection = get_collection(args.collection) if args.collection != 'default' else get_collection()
+        if args.days:
+            print(f"Generating {args.collection}::{collection.name} embeddings from locally stored documents (last {args.days} days)...")
+            processed = tools.generate_from_local(collection=collection, days=args.days)
+        else:
+            print(f"Generating {args.collection}::{collection.name} embeddings from locally stored documents...")
+            processed = tools.generate_from_local(collection=collection)
         print(f"Done! Processed {processed} documents")
         
     elif args.command == 'generate-local-all':
-        print("Generating embeddings for all non-default collections from locally stored documents...")
-        tools.generate_from_local_all()
+        if args.days:
+            print(f"Generating embeddings for all non-default collections from locally stored documents (last {args.days} days)...")
+            tools.generate_from_local_all(days=args.days)
+        else:
+            print("Generating embeddings for all non-default collections from locally stored documents...")
+            tools.generate_from_local_all()
         print("Done! Processed all collections")
         
     elif args.command == 'search':

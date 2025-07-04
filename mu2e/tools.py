@@ -316,13 +316,17 @@ def _get_summary_claude(doc, model):
     return doc
 
 
-def generate_from_local_all():
+def generate_from_local_all(days=None):
     """wrapper for generate_from_local that automatically generates all non-default collections"""
     for collection_name in collection_names:
-        if collection_name not in ["default"]:
-            print(f"Generating {collection_name} collection...")
-            c = get_collection(collection_name)
-            generate_from_local(c)
+        #if collection_name not in ["default"]:
+        if True:
+            c = get_collection(collection_name)# if collection_name not in ["default"] else get_collection()
+            if days:
+                print(f"Generating {collection_name}:{c.name} collection (last {days} days)...")
+            else:
+                print(f"Generating {collection_name}:{c.name} collection...")
+            generate_from_local(c, days=days)
 
 
 def load_from_file(base_path=None, docid=None):
@@ -384,7 +388,7 @@ def iterate_documents(base_path=None, show_progress=True):
         if doc is not None:
             yield doc
 
-def generate_from_local(collection=None, chunking_strategy="default", base_path=None, docid=None):
+def generate_from_local(collection=None, chunking_strategy="default", base_path=None, docid=None, days=None):
     """
     Generate embeddings from locally stored documents (meta.json files) into a ChromaDB collection.
     This is useful for regenerating collections with different settings without re-downloading.
@@ -394,6 +398,7 @@ def generate_from_local(collection=None, chunking_strategy="default", base_path=
         chunking_strategy: Strategy for chunking text (default: "default")
         base_path: Base path for documents (defaults to ~/.mu2e/data)
         docid: Specific document ID to process (e.g., "mu2e-docdb-12345"). If None, processes all documents.
+        days: Only process documents from the last N days (based on revised_content or created date)
     Returns:
         int: Number of documents successfully processed
     """
@@ -418,9 +423,21 @@ def generate_from_local(collection=None, chunking_strategy="default", base_path=
             print(f"Error processing {doc['doc_id']}: {str(e)}")
             return 0
     else:
-        # Process all documents
+        # Process all documents (with optional date filtering)
         for doc in iterate_documents(base_path=base_path):
             try:
+                # Apply date filtering if days parameter is provided
+                if days is not None:
+                    from datetime import datetime, timedelta
+                    cutoff_timestamp = int((datetime.now() - timedelta(days=days)).timestamp())
+                    
+                    # Convert document dates to timestamps using the same utility as saveInCollection
+                    doc_timestamp = convert_to_timestamp(doc.get('revised_content')) or convert_to_timestamp(doc.get('created'))
+                    
+                    # Skip document if it's older than the cutoff date
+                    if doc_timestamp and doc_timestamp < cutoff_timestamp:
+                        continue
+                
                 # Check if we already have this cached
                 doc_ = load2(doc['doc_id'], nodb=True, collection=collection)
                 if doc_ is not None:
