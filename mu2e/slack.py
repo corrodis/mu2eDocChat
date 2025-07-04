@@ -107,12 +107,43 @@ class slack:
             thread.daemon = True
             thread.start()
 
+    def _format_for_slack(self, text):
+        """Format response text for better Slack display"""
+        import re
+        
+        # Convert markdown links to Slack format: [text](url) -> <url|text>
+        text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<\2|\1>', text)
+        
+        # Convert mu2e document references to nicer format
+        text = re.sub(r'<https://mu2e-docdb\.fnal\.gov/cgi-bin/sso/ShowDocument\?docid=(\d+)\|mu2e-docdb-(\d+)>', 
+                     r'📄 <https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid=\1|Mu2e Doc \1>', text)
+        
+        # Convert markdown headers to bold text
+        text = re.sub(r'^## (.+)$', r'*\1*', text, flags=re.MULTILINE)
+        text = re.sub(r'^### (.+)$', r'*\1*', text, flags=re.MULTILINE)
+        text = re.sub(r'^#### (.+)$', r'*\1*', text, flags=re.MULTILINE)
+        
+        # Convert **bold** to *bold* (Slack format)
+        text = re.sub(r'\*\*([^*]+)\*\*', r'*\1*', text)
+        
+        # Improve list formatting with simple bullets
+        text = re.sub(r'^- (.+)$', r'• \1', text, flags=re.MULTILINE)
+        
+        # Add spacing around headers for better readability
+        text = re.sub(r'\n(\*[^*]+\*)\n', r'\n\n\1\n', text)
+        
+        # Clean up excessive newlines
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        
+        return text
+
     def send(self, message, thread_ts=None, channel=None):
         target_channel = channel or self.channel_id
+        formatted_message = self._format_for_slack(message)
         result = self.client.chat_postMessage(
             channel=target_channel,
             thread_ts=thread_ts,
-            text=message
+            text=formatted_message
         )
         return result.status_code == 200
 
@@ -239,6 +270,10 @@ class slack:
             return
             
         status_type = metadata.get("type", "unknown")
+        
+        # Filter out context updates (token counts) from Slack notifications
+        if status_type == "context_update":
+            return
         
         # Add appropriate emoji based on status type
         if status_type == "tool_start":
