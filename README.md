@@ -28,3 +28,6 @@ Model Context Protocol (MCP) server for integration with Claude Desktop and othe
 
 ### mu2e-web
 Web interface providing document search, chat, and document lookup through a browser. Run with `mu2e-web` and access at http://localhost:5000. See [doc/web.md](doc/web.md) for details.
+
+### mu2e-eval
+Provides tools for benchmarking database and evaluating retrieval performance. See [doc/eval.md](doc/eval.md).
