@@ -18,7 +18,9 @@ chATLAS Prompt
 - To test whether the model correctly answers a question with a retrieval score of 0 based on the provided selections use `mu2e-eval test-retrieval --test-zeros`.
 - Use `mu2e-eval test-chATLAS` to test the dataset generated via the chATLAS prompt. The scoring method is the same as for the default method and will be saved as "chATLAS_benchmark_scores.json" in the data directory.
 - The difficulty of question to be tested can be changed using `mu2e-eval test-chATLAS --rigor RIGOR`. The rigor options include `early_career`, `established_worker`, and `experienced_professional`. If no rigor is specified, questions at "established_worker" level will be used by default.
-- To specify embedding collection use `mu2e-eval test-retrieval --collection COLLECTION` or `mu2e-eval test-chATLAS --collection COLLECTION`. Available collections can be found here: [collections.md](collections.md). 
+- To specify embedding collection use `mu2e-eval test-retrieval --collection COLLECTION` or `mu2e-eval test-chATLAS --collection COLLECTION`. Available collections can be found here: [collections.md](collections.md).
+
+## Plotting
 
 
 
