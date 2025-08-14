@@ -15,7 +15,7 @@ chATLAS Prompt
 ### Testing
 - Use `mu2e-eval test-retrieval` to test qa dataset. This tool will produce a score for each question based on how high the key document was returned in the retrieval. A score of 0 indicates the document was not returned as part of the first 100 results. These scores will be saved as "benchmark_scores.json" in the data directory. 
 - To test whether the model correctly answers a question with a retrieval score of 0 based on the provided selections use `mu2e-eval test-retrieval --test-zeros`. 
-- To specify embedding collection use `mu2e-eval test-retrieval --collection COLLECTION`. 
+- To specify embedding collection use `mu2e-eval test-retrieval --collection COLLECTION`. Available collections can be found here: [collections.md](collections.md). 
 
 
 
