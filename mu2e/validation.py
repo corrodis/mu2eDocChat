@@ -86,7 +86,7 @@ class BenchmarkGenerator:
         return self.dataset
 
     
-    def chATLAS_generate_qa_pair(self):
+    def chATLAS_generate_qa_pair(self, num=None):
 
         
         system_prompt = """
@@ -127,7 +127,10 @@ Format the response as a JSON object with this structure:
     ]
 """
         question_id = 0
-        for doc in islice(tools.iterate_documents(), self.max_documents):
+        if num is None:
+            num=self.max_documents
+            
+        for doc in islice(tools.iterate_documents(), num):
             
             doc_id = doc['doc_id']
             print(doc_id)
