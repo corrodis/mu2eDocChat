@@ -21,6 +21,7 @@ chATLAS Prompt
 - To specify embedding collection use `mu2e-eval test-retrieval --collection COLLECTION` or `mu2e-eval test-chATLAS --collection COLLECTION`. Available collections can be found here: [collections.md](collections.md).
 
 ## Plotting
+See examples of plots examining embedding metrics at [examples/PlotsExample.ipynb](examples/PlotsExample.ipynb). 
 
 
 
