@@ -7,7 +7,7 @@ The `collections.py` module provides unified access to different embedding servi
 ```python
 from mu2e.collections import get_collection, collection_names
 
-print(collection_names)  # ['default', 'argo', 'multi-qa']
+print(collection_names)  # ['default', 'argo', 'multi-qa', 'custom', 'ATLAS']
 ```
 
 ## Basic Usage
