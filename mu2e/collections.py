@@ -12,6 +12,12 @@ import requests
 import json
 from typing import List
 import os
+from sentence_transformers import SentenceTransformer
+import chromadb.utils.embedding_functions as embedding_functions
+from huggingface_hub import HfFolder
+
+
+
 
 _client = None
 def _get_client():
@@ -23,7 +29,9 @@ def _get_client():
 
 collection_names = ["default",
                     "argo",
-                    "multi-qa"]
+                    "multi-qa", 
+                    "custom", 
+                    "ATLAS"]
 
 
 def get_collection(collection_name=None, user=None, model=None, url=None):
@@ -42,7 +50,7 @@ def get_collection(collection_name=None, user=None, model=None, url=None):
                 name=collection_name,
                 embedding_function=embedding_func
             )
-        c.max_input = 8191
+        c.max_input = 8190
         return c
     elif collection_name in ['multi-qa']:
         sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
@@ -55,6 +63,26 @@ def get_collection(collection_name=None, user=None, model=None, url=None):
             )
         c.max_input = 512
         return c
+
+    elif collection_name in ['custom']:
+        embedding_func = FinetunedEmbeddingFunction()
+        collection_name = f"mu2e_multi-qa-mpnet-custom"
+        c = client.get_or_create_collection(
+                name=collection_name,
+                embedding_function=embedding_func
+            )
+        c.max_input = 512
+        return c
+    elif collection_name in ['ATLAS']:
+        embedding_func = ATLASEmbeddingFunction()
+        collection_name = f"mu2e_multi-qa-mpnet-ATLAS"
+        c = client.get_or_create_collection(
+                name=collection_name,
+                embedding_function=embedding_func
+            )
+        c.max_input = 512
+        return c
+        
     if collection_name in ['default']:
         c = client.get_or_create_collection(name="mu2e_default")
         c.max_input = 256
@@ -103,11 +131,18 @@ class ArgoEmbeddingFunction(EmbeddingFunction):
             "prompt": input,
             "model": self.model  # Add model if your API supports it
         }
+        print("DEBUG DEBUG DEBUG") 
+        import tiktoken
+        for inp in input:
+            encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+            print("TOKENS", len(encoding.encode(inp)))
         
         payload = json.dumps(data)
+        print(payload)
         
         try:
             # Send POST request
+            print("DEBUG DEBUG DEBUG", self.url)
             response = requests.post(self.url, data=payload, headers=self.headers)
             response.raise_for_status()  # Raise an exception for bad status codes
             
@@ -121,3 +156,32 @@ class ArgoEmbeddingFunction(EmbeddingFunction):
             raise Exception(f"API request failed: {e}")
         except KeyError as e:
             raise Exception(f"Unexpected API response format: {e}")
+
+class FinetunedEmbeddingFunction(EmbeddingFunction):
+    
+    def __init__(self):
+        self.model = SentenceTransformer("aeboots/multi-qa-mpnet-base-dot-v1-mu2e")
+
+    def __call__(self, input: Documents) -> List[List[float]]:
+        data = []
+        for inp in input:
+            vec = self.model.encode(inp)
+            data.append(vec)
+
+        return data
+
+class ATLASEmbeddingFunction(EmbeddingFunction):
+    
+    def __init__(self):
+        self.model = SentenceTransformer('../multi-qa-mpnet-base-dot-v1-ATLAS-TALK')
+
+    def __call__(self, input: Documents) -> List[List[float]]:
+        data = []
+        for inp in input:
+            vec = self.model.encode(inp)
+            data.append(vec)
+
+        return data
+
+
+
